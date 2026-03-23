@@ -228,6 +228,58 @@ async def get_detailed_report(
 
     try:
         base = _build_report(code)
+
+        tech = base["technical"]
+        fund = base["fundamental"]
+        current_price = base["stock"]["current_price"]
+        price_history = base["price_history"]
+
+        # 52週高値・安値を price_history から抽出
+        highs = [p["high"] for p in price_history if p.get("high") is not None]
+        lows = [p["low"] for p in price_history if p.get("low") is not None]
+        high_52w = max(highs) if highs else current_price
+        low_52w = min(lows) if lows else current_price
+
+        atr_val = (tech.get("atr") or {}).get("atr")
+        sma_20 = tech.get("sma_20")
+        sma_50 = tech.get("sma_50")
+
+        # ReportGenerator で各セクションを生成
+        technical_summary = ReportGenerator.generate_technical_summary(tech, current_price)
+        fundamental_summary = ReportGenerator.generate_fundamental_summary(fund)
+        buy_reasons = ReportGenerator.generate_buy_reasons(tech, fund, current_price)
+        sell_warnings = ReportGenerator.generate_sell_warnings(tech, fund)
+        risk_reward = ReportGenerator.calculate_risk_reward(
+            current_price, high_52w, low_52w, atr_val, sma_50, sma_20
+        )
+        focus_points = ReportGenerator.extract_focus_points(base["stock"], tech, current_price)
+        qa = ReportGenerator.generate_qa(tech, fund, risk_reward, base["stock"]["name"])
+
+        # 総合判定の日本語表記
+        signal_jp_map = {
+            "strong_buy": "強気買い",
+            "buy": "買い",
+            "neutral": "中立",
+            "sell": "売り",
+            "strong_sell": "強気売り",
+        }
+        overall_signal = base["overall_signal"]
+        confidence_pct = round(base["confidence"] * 100, 1)
+        overall_judgment = f"{signal_jp_map.get(overall_signal, '中立')}（確信度 {confidence_pct}%）"
+
+        result = {
+            **base,
+            "report": {
+                "technical_summary": technical_summary,
+                "fundamental_summary": fundamental_summary,
+                "overall_judgment": overall_judgment,
+                "buy_reasons": buy_reasons,
+                "sell_warnings": sell_warnings,
+                "risk_reward": risk_reward,
+                "focus_points": focus_points,
+                "qa": qa,
+            },
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -235,58 +287,6 @@ async def get_detailed_report(
             status_code=500,
             detail=f"詳細レポート生成中にエラーが発生しました: {str(e)}",
         )
-
-    tech = base["technical"]
-    fund = base["fundamental"]
-    current_price = base["stock"]["current_price"]
-    price_history = base["price_history"]
-
-    # 52週高値・安値を price_history から抽出
-    highs = [p["high"] for p in price_history if p.get("high") is not None]
-    lows = [p["low"] for p in price_history if p.get("low") is not None]
-    high_52w = max(highs) if highs else current_price
-    low_52w = min(lows) if lows else current_price
-
-    atr_val = (tech.get("atr") or {}).get("atr")
-    sma_20 = tech.get("sma_20")
-    sma_50 = tech.get("sma_50")
-
-    # ReportGenerator で各セクションを生成
-    technical_summary = ReportGenerator.generate_technical_summary(tech, current_price)
-    fundamental_summary = ReportGenerator.generate_fundamental_summary(fund)
-    buy_reasons = ReportGenerator.generate_buy_reasons(tech, fund, current_price)
-    sell_warnings = ReportGenerator.generate_sell_warnings(tech, fund)
-    risk_reward = ReportGenerator.calculate_risk_reward(
-        current_price, high_52w, low_52w, atr_val, sma_50, sma_20
-    )
-    focus_points = ReportGenerator.extract_focus_points(base["stock"], tech, current_price)
-    qa = ReportGenerator.generate_qa(tech, fund, risk_reward, base["stock"]["name"])
-
-    # 総合判定の日本語表記
-    signal_jp_map = {
-        "strong_buy": "強気買い",
-        "buy": "買い",
-        "neutral": "中立",
-        "sell": "売り",
-        "strong_sell": "強気売り",
-    }
-    overall_signal = base["overall_signal"]
-    confidence_pct = round(base["confidence"] * 100, 1)
-    overall_judgment = f"{signal_jp_map.get(overall_signal, '中立')}（確信度 {confidence_pct}%）"
-
-    result = {
-        **base,
-        "report": {
-            "technical_summary": technical_summary,
-            "fundamental_summary": fundamental_summary,
-            "overall_judgment": overall_judgment,
-            "buy_reasons": buy_reasons,
-            "sell_warnings": sell_warnings,
-            "risk_reward": risk_reward,
-            "focus_points": focus_points,
-            "qa": qa,
-        },
-    }
 
     cache.set(f"detailed_report:{code}", result, ttl=60)
     return result
