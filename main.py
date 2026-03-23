@@ -12,6 +12,9 @@ from indicators import TechnicalIndicators
 from models import CacheInfo, StockReport
 from reports import ReportGenerator
 from yf_session import create_session
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = FastAPI(title="Stock Report Generator", version="2.0.0")
 
@@ -48,17 +51,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# フロントエンド静的ファイルを配信
-app.mount("/static", StaticFiles(directory="."), name="static")
-
-
-import os
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 @app.get("/", response_class=FileResponse)
 async def root():
     return FileResponse(os.path.join(BASE_DIR, "index.html"))
+
+# フロントエンド静的ファイルを配信（ルート定義の後に配置）
+app.mount("/static", StaticFiles(directory="."), name="static")
 
 
 def _build_report(code: str) -> dict:
