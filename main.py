@@ -60,7 +60,6 @@ app.add_middleware(
 async def root():
     return FileResponse(os.path.join(BASE_DIR, "index.html"))
 
-# ルート直下で app.js と styles.css を個別に配信（確実な方法）
 @app.get("/app.js")
 async def get_js():
     return FileResponse(os.path.join(BASE_DIR, "app.js"))
@@ -69,10 +68,39 @@ async def get_js():
 async def get_css():
     return FileResponse(os.path.join(BASE_DIR, "styles.css"))
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    logger.error(f"Internal Server Error: {str(exc)}")
+    logger.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "type": "server_error",
+                "message": f"内部エラーが発生しました: {str(exc)}",
+                "status_code": 500,
+            }
+        },
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "type": _ERROR_TYPE_MAP.get(exc.status_code, "unknown"),
+                "message": exc.detail,
+                "status_code": exc.status_code,
+            }
+        },
+    )
+
 
 def _build_report(code: str) -> dict:
     """レポートデータを構築するメイン処理（v2.0）"""
-    ticker = yf.Ticker(code, session=create_session())
+    ticker = yf.Ticker(code)
 
     # 株価履歴取得（SMA50+一目均衡表52日+1年表示に必要な約450日分）
     end_date = datetime.now()
@@ -104,7 +132,11 @@ def _build_report(code: str) -> dict:
     # ─── ファンダメンタル分析（v2.0）───
     try:
         fund_dict = FundamentalAnalysis.analyze_fundamental(code)
-    except Exception:
+    except Exception as e:
+        import traceback
+        logger.error("!!! Fundamental Analysis CRASHED !!!")
+        logger.error(f"Error: {e}")
+        logger.error(traceback.format_exc())
         fund_dict = {
             "name": name,
             "per": None,

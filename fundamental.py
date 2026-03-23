@@ -67,16 +67,20 @@ class FundamentalAnalysis:
     @staticmethod
     def analyze_fundamental(code: str) -> Dict:
         """全ファンダメンタル指標を統合し、スコアとシグナルを算出"""
-        ticker = yf.Ticker(code, session=create_session())
+        ticker = yf.Ticker(code)
         info = ticker.info
+
+        # デバッグ用ログ
+        print(f"DEBUG: [{code}] info keys: {list(info.keys()) if info else 'EMPTY'}")
 
         name = info.get("longName") or info.get("shortName") or code
 
         # ─── 既存指標 ───
         per = info.get("trailingPE") or info.get("forwardPE")
         dividend_yield = info.get("dividendYield")
+        print(f"DEBUG: per={per}, div={dividend_yield}")
+
         if dividend_yield:
-            # yfinance 1.x は % 表記（2.86）、0.x は小数表記（0.0286）で返す
             if dividend_yield < 1.0:
                 dividend_yield = round(dividend_yield * 100, 2)
             else:
@@ -85,20 +89,24 @@ class FundamentalAnalysis:
         # 年初来パフォーマンス計算
         ytd_performance = None
         try:
-            hist = ticker.history(start=f"{datetime.now().year}-01-01")
-            if len(hist) >= 2:
-                year_start = float(hist["Close"].iloc[0])
-                current_price = float(hist["Close"].iloc[-1])
+            hist_ytd = ticker.history(start=f"{datetime.now().year}-01-01")
+            if len(hist_ytd) >= 2:
+                year_start = float(hist_ytd["Close"].iloc[0])
+                current_price = float(hist_ytd["Close"].iloc[-1])
                 ytd_performance = round(
                     (current_price - year_start) / year_start * 100, 2
                 )
-        except Exception:
-            pass
+            print(f"DEBUG: ytd={ytd_performance}")
+        except Exception as e:
+            print(f"DEBUG: YTD calculation error: {e}")
 
         # ─── 新規指標 ───
         roe = info.get("returnOnEquity")
         operating_margin = info.get("operatingMargins")
+        print(f"DEBUG: roe={roe}, om={operating_margin}")
+        
         eps_growth = FundamentalAnalysis.calculate_eps_growth(info)
+        print(f"DEBUG: eps_growth={eps_growth}")
 
         # 評価
         roe_eval = FundamentalAnalysis.evaluate_roe(roe)

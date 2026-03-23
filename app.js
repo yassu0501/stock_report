@@ -149,7 +149,7 @@ function renderChart(priceHistory) {
   window.addEventListener('resize', () => chartInstance && chartInstance.resize());
 }
 
-function renderReport(data) {
+function renderReport(data, isFromCache) {
   // 株情報
   document.getElementById('s-name').textContent = data.stock.name;
   document.getElementById('s-code').textContent = data.stock.code;
