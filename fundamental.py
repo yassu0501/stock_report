@@ -3,6 +3,8 @@ from typing import Dict, Optional
 
 import yfinance as yf
 
+from yf_session import create_session
+
 
 class FundamentalAnalysis:
     """ファンダメンタル分析クラス（v2.0）"""
@@ -65,7 +67,7 @@ class FundamentalAnalysis:
     @staticmethod
     def analyze_fundamental(code: str) -> Dict:
         """全ファンダメンタル指標を統合し、スコアとシグナルを算出"""
-        ticker = yf.Ticker(code)
+        ticker = yf.Ticker(code, session=create_session())
         info = ticker.info
 
         name = info.get("longName") or info.get("shortName") or code

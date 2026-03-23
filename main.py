@@ -11,6 +11,7 @@ from fundamental import FundamentalAnalysis
 from indicators import TechnicalIndicators
 from models import CacheInfo, StockReport
 from reports import ReportGenerator
+from yf_session import create_session
 
 app = FastAPI(title="Stock Report Generator", version="2.0.0")
 
@@ -38,7 +39,7 @@ async def root():
 
 def _build_report(code: str) -> dict:
     """レポートデータを構築するメイン処理（v2.0）"""
-    ticker = yf.Ticker(code)
+    ticker = yf.Ticker(code, session=create_session())
 
     # 株価履歴取得（SMA50+一目均衡表52日+1年表示に必要な約450日分）
     end_date = datetime.now()
