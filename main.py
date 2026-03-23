@@ -13,6 +13,11 @@ from models import CacheInfo, StockReport
 from reports import ReportGenerator
 from yf_session import create_session
 import os
+import logging
+
+# ロガーの設定
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -239,6 +244,7 @@ async def get_detailed_report(
     code: str = Query(default="7203.T", description="銘柄コード（例: 7203.T）")
 ):
     """v2.5 版の詳細レポートを取得する"""
+    logger.info(f"API Request - Detailed Report: {code}")
     if not code or not code.strip():
         raise HTTPException(status_code=400, detail="銘柄コードを指定してください")
 
