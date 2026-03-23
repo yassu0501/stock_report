@@ -69,9 +69,6 @@ async def get_js():
 async def get_css():
     return FileResponse(os.path.join(BASE_DIR, "styles.css"))
 
-# その他の静的ファイルが必要な場合のためにマウントを残すが、優先順位を下げる
-app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
-
 
 def _build_report(code: str) -> dict:
     """レポートデータを構築するメイン処理（v2.0）"""
@@ -248,12 +245,12 @@ async def refresh_report(
     return report
 
 
-@app.get("/api/report/detailed")
-async def get_detailed_report(
+@app.get("/api/v2/report")
+async def get_detailed_report_v2(
     code: str = Query(default="7203.T", description="銘柄コード（例: 7203.T）")
 ):
     """v2.5 版の詳細レポートを取得する"""
-    logger.info(f"API Request - Detailed Report: {code}")
+    logger.info(f"API Request RECEIVED - v2: {code}")
     if not code or not code.strip():
         raise HTTPException(status_code=400, detail="銘柄コードを指定してください")
 
@@ -330,8 +327,8 @@ async def get_detailed_report(
     return result
 
 
-@app.get("/api/refresh/detailed")
-async def refresh_detailed_report(
+@app.get("/api/v2/refresh")
+async def refresh_detailed_report_v2(
     code: str = Query(default="7203.T", description="銘柄コード（例: 7203.T）")
 ):
     """詳細レポートのキャッシュを無効化して最新データを取得する"""
@@ -342,7 +339,7 @@ async def refresh_detailed_report(
     cache.clear(f"report:{code}")
     cache.clear(f"detailed_report:{code}")
 
-    return await get_detailed_report(code)
+    return await get_detailed_report_v2(code)
 
 
 @app.get("/api/cache-info", response_model=CacheInfo)
@@ -370,6 +367,9 @@ async def health_check():
     """ヘルスチェックエンドポイント"""
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
+
+# すべてのAPI定義の後に、静的ファイルマウントを配置
+app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
 if __name__ == "__main__":
     import uvicorn

@@ -489,7 +489,7 @@ async function fetchReport() {
 
   setLoading(true);
   try {
-    const res = await fetchWithRetry(`${API_BASE}/api/report/detailed?code=${encodeURIComponent(code)}`);
+    const res = await fetchWithRetry(`${API_BASE}/api/v2/report?code=${encodeURIComponent(code)}`);
     const data = await res.json();
     if (!res.ok) {
       const errMsg = data.error?.message || data.detail || `エラー: ${res.status}`;
@@ -515,7 +515,7 @@ async function refreshReport() {
 
   setLoading(true);
   try {
-    const res = await fetchWithRetry(`${API_BASE}/api/refresh/detailed?code=${encodeURIComponent(code)}`);
+    const res = await fetchWithRetry(`${API_BASE}/api/v2/refresh?code=${encodeURIComponent(code)}`);
     const data = await res.json();
     if (!res.ok) {
       const errMsg = data.error?.message || data.detail || `エラー: ${res.status}`;
