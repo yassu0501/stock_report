@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Report Generator</title>
+  <link rel="stylesheet" href="/static/styles.css?v=6" />
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>Stock Report Generator</h1>
+  <div class="header-controls">
+    <div class="input-group">
+      <label for="code-input">銘柄コード</label>
+      <input id="code-input" type="text" value="" placeholder="例: 7203 または AAPL" />
+    </div>
+    <button id="fetch-btn" onclick="fetchReport()">レポート取得</button>
+    <button id="refresh-btn" onclick="refreshReport()" style="background:#444;">更新</button>
+  </div>
+</header>
+
+<main>
+  <div id="error-box"></div>
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>データを取得中...</p>
+  </div>
+
+  <div id="report-area">
+    <!-- 銘柄ヘッダー -->
+    <div class="card" id="stock-header-card" style="margin-bottom:16px;">
+      <div class="stock-header">
+        <span class="stock-name" id="s-name"></span>
+        <span class="stock-code" id="s-code"></span>
+        <span class="stock-price" id="s-price"></span>
+      </div>
+      <span class="stock-ts" id="s-ts"></span>
+    </div>
+    <!-- 総合判定 -->
+    <div class="card" id="overall-card" style="margin-bottom:16px;">
+      <div class="card-title">総合判定</div>
+      <div class="overall-content">
+        <div class="overall-main">
+          <div class="overall-signal-text" id="o-signal"></div>
+          <div class="overall-judgment" id="o-judgment"></div>
+        </div>
+        <div class="overall-side">
+          <div class="confidence-label">信頼度</div>
+          <div class="confidence-value" id="o-confidence"></div>
+          <div class="confidence-bar-track">
+            <div class="confidence-bar-fill" id="o-confidence-bar"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- チャート -->
+    <div class="card" id="chart-card">
+      <div class="card-title">1年間 株価推移</div>
+      <div class="chart-wrap">
+        <div id="priceChart" style="width:100%;height:100%;"></div>
+      </div>
+    </div>
+
+    <!-- テクニカル & ファンダメンタル -->
+    <div class="grid-2" style="margin-top:16px;">
+      <div class="card" id="tech-card">
+        <div class="card-title">テクニカル分析</div>
+        <div class="metric-row">
+          <span class="metric-label">SMA (20日)</span>
+          <span class="metric-value" id="t-sma20"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">SMA (50日)</span>
+          <span class="metric-value" id="t-sma50"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">RSI (14日)</span>
+          <span class="metric-value" id="t-rsi"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">MACD ライン</span>
+          <span class="metric-value" id="t-macd-line"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">MACD シグナル</span>
+          <span class="metric-value" id="t-macd-signal"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">MACD ヒストグラム</span>
+          <span class="metric-value" id="t-macd-hist"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">シグナル</span>
+          <span id="t-signal-badge"></span>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label">
+            <span>テクニカルスコア</span>
+            <span id="t-score-text"></span>
+          </div>
+          <div class="score-bar-track">
+            <div class="score-bar-fill" id="t-score-bar" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="fund-card">
+        <div class="card-title">ファンダメンタル分析</div>
+        <div class="metric-row">
+          <span class="metric-label">PER</span>
+          <span class="metric-value" id="f-per"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">配当利回り</span>
+          <span class="metric-value" id="f-div"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">EPS成長率</span>
+          <span class="metric-value" id="f-eps-growth"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">ROE</span>
+          <span class="metric-value" id="f-roe"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">営業利益率</span>
+          <span class="metric-value" id="f-operating-margin"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">年初来パフォーマンス</span>
+          <span class="metric-value" id="f-ytd"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">シグナル</span>
+          <span id="f-signal-badge"></span>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar-label">
+            <span>ファンダメンタルスコア</span>
+            <span id="f-score-text"></span>
+          </div>
+          <div class="score-bar-track">
+            <div class="score-bar-fill" id="f-score-bar" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- テクニカル詳細カード & ファンダメンタル詳細カード -->
+    <div class="grid-2" style="margin-top:16px;">
+      <div class="card" id="tech-detail-card">
+        <div class="card-title">テクニカル詳細</div>
+        <div class="metric-row">
+          <span class="metric-label">ATR（ボラティリティ）</span>
+          <div class="metric-right">
+            <span class="metric-value" id="d-atr-val"></span>
+            <span id="d-atr-sig"></span>
+          </div>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">BB 上限 / 中心 / 下限</span>
+          <div class="metric-right">
+            <span class="metric-value" id="d-bb-val"></span>
+            <span id="d-bb-sig"></span>
+          </div>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">一目均衡表（雲）</span>
+          <div class="metric-right">
+            <span class="metric-value" id="d-ichi-val"></span>
+            <span id="d-ichi-sig"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="fund-detail-card">
+        <div class="card-title">ファンダメンタル詳細</div>
+        <div class="metric-row">
+          <span class="metric-label">ROE</span>
+          <div class="metric-right">
+            <span class="metric-value" id="d-roe-val"></span>
+            <span id="d-roe-eval"></span>
+          </div>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">EPS成長率</span>
+          <div class="metric-right">
+            <span class="metric-value" id="d-eps-val"></span>
+            <span id="d-eps-eval"></span>
+          </div>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">営業利益率</span>
+          <div class="metric-right">
+            <span class="metric-value" id="d-om-val"></span>
+            <span id="d-om-eval"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- テクニカルサマリー & ファンダメンタルサマリー -->
+    <div class="grid-2" style="margin-top:16px;">
+      <div class="card" id="tech-summary-card">
+        <div class="card-title">テクニカルサマリー</div>
+        <div class="summary-text" id="r-tech-summary"></div>
+      </div>
+      <div class="card" id="fund-summary-card">
+        <div class="card-title">ファンダメンタルサマリー</div>
+        <div class="summary-text" id="r-fund-summary"></div>
+      </div>
+    </div>
+
+    <!-- 買い根拠 & 売り警告 -->
+    <div class="grid-2" style="margin-top:16px;">
+      <div class="card" id="buy-reasons-card">
+        <div class="card-title">買い根拠</div>
+        <div id="r-buy-reasons"></div>
+      </div>
+      <div class="card" id="sell-warnings-card">
+        <div class="card-title">売り警告</div>
+        <div id="r-sell-warnings"></div>
+      </div>
+    </div>
+
+    <!-- リスク・リワード -->
+    <div class="card" id="risk-reward-card" style="margin-top:16px;">
+      <div class="card-title">リスク・リワード</div>
+      <div class="rr-grid">
+        <div class="rr-item">
+          <div class="rr-label">目標株価</div>
+          <div class="rr-value buy" id="rr-target"></div>
+          <div class="rr-sub" id="rr-reward-pct"></div>
+        </div>
+        <div class="rr-item">
+          <div class="rr-label">損切りライン</div>
+          <div class="rr-value sell" id="rr-stop"></div>
+          <div class="rr-sub" id="rr-risk-pct"></div>
+        </div>
+        <div class="rr-item">
+          <div class="rr-label">R/R 比率</div>
+          <div class="rr-value" id="rr-ratio"></div>
+        </div>
+      </div>
+      <div class="rr-evaluation" id="rr-evaluation"></div>
+    </div>
+
+    <!-- 注目ポイント -->
+    <div class="card" id="focus-card" style="margin-top:16px;">
+      <div class="card-title">注目ポイント</div>
+      <div id="r-focus-points"></div>
+    </div>
+
+    <!-- Q&A -->
+    <div class="card" id="qa-card" style="margin-top:16px;">
+      <div class="card-title">Q &amp; A</div>
+      <div id="r-qa"></div>
+    </div>
+
+
+    <div class="last-updated" id="last-updated"></div>
+  </div>
+</main>
+
+<script src="/static/app.js?v=9"></script>
+</body>
+</html>
