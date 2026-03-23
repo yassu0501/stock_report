@@ -27,9 +27,13 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="."), name="static")
 
 
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 @app.get("/", response_class=FileResponse)
 async def root():
-    return FileResponse("index.html")
+    return FileResponse(os.path.join(BASE_DIR, "index.html"))
 
 
 def _build_report(code: str) -> dict:
