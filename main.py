@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 
 import yfinance as yf
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from cache import cache
 from fundamental import FundamentalAnalysis
@@ -14,6 +14,30 @@ from reports import ReportGenerator
 from yf_session import create_session
 
 app = FastAPI(title="Stock Report Generator", version="2.0.0")
+
+
+_ERROR_TYPE_MAP = {
+    400: "invalid_input",
+    404: "not_found",
+    429: "rate_limit",
+    500: "server_error",
+}
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "type": _ERROR_TYPE_MAP.get(exc.status_code, "unknown"),
+                "message": exc.detail,
+                "status_code": exc.status_code,
+                "timestamp": datetime.now().isoformat(),
+            }
+        },
+    )
+
 
 # CORS全オリジン許可
 app.add_middleware(
@@ -181,7 +205,7 @@ async def get_report(
         )
 
     # キャッシュに保存（TTL: 60秒）
-    cache.set(f"report:{code}", report, ttl=60)
+    cache.set(f"report:{code}", report, ttl=3600)
     return report
 
 
@@ -208,7 +232,7 @@ async def refresh_report(
             detail=f"レポート更新中にエラーが発生しました: {str(e)}",
         )
 
-    cache.set(f"report:{code}", report, ttl=60)
+    cache.set(f"report:{code}", report, ttl=3600)
     return report
 
 
@@ -289,7 +313,7 @@ async def get_detailed_report(
             detail=f"詳細レポート生成中にエラーが発生しました: {str(e)}",
         )
 
-    cache.set(f"detailed_report:{code}", result, ttl=60)
+    cache.set(f"detailed_report:{code}", result, ttl=3600)
     return result
 
 
@@ -309,9 +333,23 @@ async def refresh_detailed_report(
 
 
 @app.get("/api/cache-info", response_model=CacheInfo)
+@app.get("/api/cache/info", response_model=CacheInfo)
 async def get_cache_info():
     """現在のキャッシュ状態を返す"""
     return cache.info()
+
+
+@app.post("/api/cache/clear")
+async def clear_cache(code: str = Query(default=None, description="銘柄コード（省略時は全削除）")):
+    """キャッシュをクリアする"""
+    if code:
+        key = code.strip().upper()
+        cache.clear(f"report:{key}")
+        cache.clear(f"detailed_report:{key}")
+        return {"message": f"キャッシュをクリアしました: {key}"}
+    else:
+        cache.clear()
+        return {"message": "すべてのキャッシュをクリアしました"}
 
 
 @app.get("/health")

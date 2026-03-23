@@ -427,3 +427,43 @@ main {
   .overall-side { border-left: none; padding-left: 0; text-align: center; }
   .overall-signal-text { font-size: 2.8rem; }
 }
+
+/* ── Cache Indicator ── */
+#cache-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #0f2318;
+  border-left: 3px solid #4caf50;
+  border-radius: 6px;
+  padding: 10px 16px;
+  margin: 0 24px 12px;
+  font-size: 0.82rem;
+  color: #81c784;
+}
+#cache-indicator span { flex: 1; }
+#clear-cache-btn {
+  background: transparent;
+  border: 1px solid #4caf50;
+  color: #81c784;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#clear-cache-btn:hover { background: #1a3a22; }
+
+/* ── Error variants ── */
+#error-box { white-space: pre-line; }
+#error-box.error-rate-limit {
+  background: #1a1200;
+  border-left-color: #ff9800;
+  color: #ffb74d;
+}
+#error-box.error-network {
+  background: #101418;
+  border-left-color: #607d8b;
+  color: #90a4ae;
+}

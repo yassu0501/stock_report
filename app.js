@@ -343,6 +343,15 @@ function renderReport(data) {
   document.getElementById('last-updated').textContent =
     '最終更新: ' + new Date().toLocaleString('ja-JP');
 
+  // キャッシュインジケーター
+  const indicator = document.getElementById('cache-indicator');
+  if (isFromCache) {
+    document.getElementById('cache-time').textContent = getCacheTimestamp(currentCode);
+    indicator.style.display = 'flex';
+  } else {
+    indicator.style.display = 'none';
+  }
+
   // 先に表示してからチャートを描画（display:none だとサイズが 0 になるため）
   document.getElementById('report-area').style.display = 'block';
   document.querySelectorAll('.card').forEach(el => el.classList.remove('visible'));
@@ -352,6 +361,106 @@ function renderReport(data) {
   });
 }
 
+// ── localStorage キャッシュ ──────────────────────────────────────────────────
+
+const CACHE_DURATION = 3600000; // 1時間
+const CACHE_PREFIX = 'stock_report_';
+
+function getCachedReport(code) {
+  try {
+    const raw = localStorage.getItem(CACHE_PREFIX + code);
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (Date.now() - entry.timestamp > CACHE_DURATION) {
+      localStorage.removeItem(CACHE_PREFIX + code);
+      return null;
+    }
+    return entry;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCachedReport(code, data) {
+  try {
+    localStorage.setItem(CACHE_PREFIX + code, JSON.stringify({ data, timestamp: Date.now(), code }));
+  } catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      // 最も古いキャッシュを削除してリトライ
+      const keys = Object.keys(localStorage).filter(k => k.startsWith(CACHE_PREFIX));
+      if (keys.length > 0) {
+        const oldest = keys.reduce((a, b) => {
+          const at = JSON.parse(localStorage.getItem(a) || '{}').timestamp || 0;
+          const bt = JSON.parse(localStorage.getItem(b) || '{}').timestamp || 0;
+          return at < bt ? a : b;
+        });
+        localStorage.removeItem(oldest);
+        try { localStorage.setItem(CACHE_PREFIX + code, JSON.stringify({ data, timestamp: Date.now(), code })); } catch (_) {}
+      }
+    }
+  }
+}
+
+function getCacheTimestamp(code) {
+  const entry = getCachedReport(code);
+  return entry ? new Date(entry.timestamp).toLocaleString('ja-JP') : null;
+}
+
+function clearCacheForCode(code) {
+  if (code) localStorage.removeItem(CACHE_PREFIX + code.trim().toUpperCase());
+}
+
+// ── エラーハンドリング ───────────────────────────────────────────────────────
+
+function classifyError(status) {
+  if (status === 429) return { type: 'rate_limit', retryable: true,  msg: '⏰ レート制限に達しました。しばらく後に再試行してください。' };
+  if (status === 404) return { type: 'not_found',  retryable: false, msg: '❌ 銘柄が見つかりません。コードをご確認ください。' };
+  if (status >= 500)  return { type: 'server',     retryable: true,  msg: '⚠️ サーバーエラーが発生しました。後ほど再度お試しください。' };
+  return                     { type: 'unknown',    retryable: false, msg: `❌ エラーが発生しました (${status})` };
+}
+
+async function fetchWithRetry(url, maxRetries = 3) {
+  const baseDelay = 1000;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (res.ok) return res;
+      const { retryable } = classifyError(res.status);
+      if (retryable && attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+function handleFetchError(err, code) {
+  const status = err.status;
+  const { type, msg } = status ? classifyError(status) : { type: 'network', msg: '🌐 ネットワークエラー。接続をご確認ください。' };
+
+  // エラーボックスにスタイルを付与
+  const box = document.getElementById('error-box');
+  box.className = type === 'rate_limit' ? 'error-rate-limit' : type === 'network' ? 'error-network' : '';
+
+  // キャッシュフォールバック
+  const cached = getCachedReport(code);
+  if (cached) {
+    renderReport(cached.data, true, code);
+    showError(msg + `\n\n📦 キャッシュデータを表示しています（${getCacheTimestamp(code)}）`);
+  } else {
+    showError(err.message || msg);
+  }
+}
+
+// ── 銘柄コード正規化 ─────────────────────────────────────────────────────────
+
 // 銘柄コードを正規化（4桁の英数字なら .T を自動補完）
 function normalizeCode(raw) {
   const code = raw.trim().toUpperCase();
@@ -359,22 +468,37 @@ function normalizeCode(raw) {
   return code;
 }
 
+// ── API 呼び出し ─────────────────────────────────────────────────────────────
+
+let currentCode = '';
+
 async function fetchReport() {
   const raw = document.getElementById('code-input').value.trim();
   if (!raw) { showError('銘柄コードを入力してください'); return; }
   const code = normalizeCode(raw);
+  currentCode = code;
   document.getElementById('code-input').value = code;
   hideError();
+
+  // localStorage キャッシュ確認
+  const cached = getCachedReport(code);
+  if (cached) {
+    renderReport(cached.data, true, code);
+    return;
+  }
+
   setLoading(true);
   try {
-    const res = await fetch(`${API_BASE}/api/report/detailed?code=${encodeURIComponent(code)}`);
+    const res = await fetchWithRetry(`${API_BASE}/api/report/detailed?code=${encodeURIComponent(code)}`);
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.detail || `エラー: ${res.status}`);
+      const errMsg = data.error?.message || data.detail || `エラー: ${res.status}`;
+      throw Object.assign(new Error(errMsg), { status: res.status });
     }
-    renderReport(data);
+    setCachedReport(code, data);
+    renderReport(data, false, code);
   } catch (e) {
-    showError(e.message || 'データの取得に失敗しました');
+    handleFetchError(e, code);
   } finally {
     setLoading(false);
   }
@@ -384,18 +508,23 @@ async function refreshReport() {
   const raw = document.getElementById('code-input').value.trim();
   if (!raw) { showError('銘柄コードを入力してください'); return; }
   const code = normalizeCode(raw);
+  currentCode = code;
   document.getElementById('code-input').value = code;
   hideError();
+  clearCacheForCode(code); // localStorage を削除して強制更新
+
   setLoading(true);
   try {
-    const res = await fetch(`${API_BASE}/api/refresh/detailed?code=${encodeURIComponent(code)}`);
+    const res = await fetchWithRetry(`${API_BASE}/api/refresh/detailed?code=${encodeURIComponent(code)}`);
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.detail || `エラー: ${res.status}`);
+      const errMsg = data.error?.message || data.detail || `エラー: ${res.status}`;
+      throw Object.assign(new Error(errMsg), { status: res.status });
     }
-    renderReport(data);
+    setCachedReport(code, data);
+    renderReport(data, false, code);
   } catch (e) {
-    showError(e.message || 'データの更新に失敗しました');
+    handleFetchError(e, code);
   } finally {
     setLoading(false);
   }
@@ -404,4 +533,10 @@ async function refreshReport() {
 // Enterキーでフェッチ
 document.getElementById('code-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') fetchReport();
+});
+
+// キャッシュクリアボタン
+document.getElementById('clear-cache-btn').addEventListener('click', () => {
+  clearCacheForCode(currentCode);
+  document.getElementById('cache-indicator').style.display = 'none';
 });
