@@ -60,8 +60,17 @@ app.add_middleware(
 async def root():
     return FileResponse(os.path.join(BASE_DIR, "index.html"))
 
-# フロントエンド静的ファイルを配信（ルート定義の後に配置）
-app.mount("/static", StaticFiles(directory="."), name="static")
+# ルート直下で app.js と styles.css を個別に配信（確実な方法）
+@app.get("/app.js")
+async def get_js():
+    return FileResponse(os.path.join(BASE_DIR, "app.js"))
+
+@app.get("/styles.css")
+async def get_css():
+    return FileResponse(os.path.join(BASE_DIR, "styles.css"))
+
+# その他の静的ファイルが必要な場合のためにマウントを残すが、優先順位を下げる
+app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
 
 def _build_report(code: str) -> dict:
