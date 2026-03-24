@@ -1,12 +1,12 @@
 import os
 import logging
-import requests
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+import yfinance as yf
 
 from cache import cache
 from fundamental import FundamentalAnalysis
@@ -38,55 +38,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Yahoo Finance API 直接取得用のヘルパー ───
+# ─── Yahoo Finance データ取得用のヘルパー ───
 
 def fetch_yahoo_v8(ticker: str, range_period: str = "1y", interval: str = "1d"):
-    """SKILL.md の成功パターンに基づき直接 API を叩く"""
-    # 期間変換 (1y -> 450d分確保)
-    end = int(datetime.now().timestamp())
-    start = int((datetime.now() - timedelta(days=450)).timestamp())
-    
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval={interval}&period1={start}&period2={end}&events=history&includeAdjustedClose=true"
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
-    
+    """yfinance を使って価格データを取得する"""
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        result = data.get("chart", {}).get("result", [])
-        if not result:
+        t = yf.Ticker(ticker)
+        df = t.history(period="18mo", interval=interval, auto_adjust=True)
+        if df.empty:
             raise ValueError("No data found")
-            
-        res = result[0]
-        meta = res.get("meta", {})
-        ts = res.get("timestamp", [])
-        indicators = res.get("indicators", {}).get("quote", [{}])[0]
-        adj = res.get("indicators", {}).get("adjclose", [{}])[0].get("adjclose", [])
-        
-        # DataFrame 化 (SKILL.md の補正ロジック)
-        df = pd.DataFrame({
-            "Date": [datetime.fromtimestamp(t) for t in ts],
-            "Open": indicators.get("open", []),
-            "High": indicators.get("high", []),
-            "Low": indicators.get("low", []),
-            "Close": indicators.get("close", []),
-            "Adj Close": adj
-        })
-        
-        # 株式分割補正 (Close と Adj Close の比率で他も補正)
-        df['ratio'] = df['Adj Close'] / df['Close']
-        for col in ['Open', 'High', 'Low']:
-            df[col] = df[col] * df['ratio']
-        df['Close'] = df['Adj Close']
-        
-        df = df.dropna().reset_index(drop=True)
-        return df, meta
+
+        info = {}
+        try:
+            info = t.info or {}
+        except Exception:
+            pass
+
+        df = df.reset_index()
+        # カラム名を統一
+        df = df.rename(columns={"index": "Date"})
+        if "Datetime" in df.columns:
+            df = df.rename(columns={"Datetime": "Date"})
+        # Date を timezone-naive に変換
+        if hasattr(df["Date"].dtype, "tz") and df["Date"].dt.tz is not None:
+            df["Date"] = df["Date"].dt.tz_localize(None)
+        # auto_adjust=True の場合 Adj Close = Close
+        if "Adj Close" not in df.columns:
+            df["Adj Close"] = df["Close"]
+
+        df = df[["Date", "Open", "High", "Low", "Close", "Adj Close"]].dropna().reset_index(drop=True)
+        return df, info
     except Exception as e:
-        logger.error(f"Yahoo API Error: {str(e)}")
+        logger.error(f"yfinance fetch error [{ticker}]: {str(e)}")
         raise HTTPException(status_code=404, detail=f"銘柄 '{ticker}' の取得に失敗しました: {str(e)}")
 
 def _build_report(code: str) -> dict:
