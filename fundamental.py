@@ -69,18 +69,15 @@ class FundamentalAnalysis:
             ticker = yf.Ticker(code)
             info = ticker.info or {}
         except Exception as e:
-            print(f"DEBUG: Fundamental fetch error for {code}: {e}")
+            pass
             info = {}
 
-        # デバッグ用ログ
-        print(f"DEBUG: [{code}] info keys: {list(info.keys()) if info else 'EMPTY'}")
 
         name = info.get("longName") or info.get("shortName") or code
 
         # ─── 既存指標 ───
         per = info.get("trailingPE") or info.get("forwardPE")
         dividend_yield = info.get("dividendYield")
-        print(f"DEBUG: per={per}, div={dividend_yield}")
 
         if dividend_yield:
             if dividend_yield < 1.0:
@@ -98,17 +95,15 @@ class FundamentalAnalysis:
                 ytd_performance = round(
                     (current_price - year_start) / year_start * 100, 2
                 )
-            print(f"DEBUG: ytd={ytd_performance}")
+
         except Exception as e:
-            print(f"DEBUG: YTD calculation error: {e}")
+            pass
 
         # ─── 新規指標 ───
         roe = info.get("returnOnEquity")
         operating_margin = info.get("operatingMargins")
-        print(f"DEBUG: roe={roe}, om={operating_margin}")
         
         eps_growth = FundamentalAnalysis.calculate_eps_growth(info)
-        print(f"DEBUG: eps_growth={eps_growth}")
 
         # 評価
         roe_eval = FundamentalAnalysis.evaluate_roe(roe)
