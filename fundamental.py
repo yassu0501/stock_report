@@ -3,8 +3,6 @@ from typing import Dict, Optional
 
 import yfinance as yf
 
-from yf_session import create_session
-
 
 class FundamentalAnalysis:
     """ファンダメンタル分析クラス（v2.0）"""
@@ -67,8 +65,12 @@ class FundamentalAnalysis:
     @staticmethod
     def analyze_fundamental(code: str) -> Dict:
         """全ファンダメンタル指標を統合し、スコアとシグナルを算出"""
-        ticker = yf.Ticker(code)
-        info = ticker.info
+        try:
+            ticker = yf.Ticker(code)
+            info = ticker.info or {}
+        except Exception as e:
+            print(f"DEBUG: Fundamental fetch error for {code}: {e}")
+            info = {}
 
         # デバッグ用ログ
         print(f"DEBUG: [{code}] info keys: {list(info.keys()) if info else 'EMPTY'}")
