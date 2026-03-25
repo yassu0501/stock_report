@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-requests
-pandas
-python-multipart
-jinja2
-cachetools
-requests-cache
-yfinance
