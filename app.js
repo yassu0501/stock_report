@@ -46,6 +46,7 @@ function signalLabel(sig) {
     high_volatility: 'HIGH VOL', low_volatility: 'LOW VOL', normal: 'NORMAL',
     excellent: 'EXCELLENT', good: 'GOOD', average: 'AVERAGE', poor: 'POOR',
     high_growth: 'HIGH GROWTH', steady_growth: 'STEADY', stable: 'STABLE', unknown: 'N/A',
+    high: 'HIGH', low: 'LOW',
   };
   return map[sig] || sig?.toUpperCase() || '-';
 }
@@ -183,14 +184,14 @@ function renderReport(data, isFromCache) {
     ? (fEps >= 0 ? '+' : '') + fEps.toFixed(1) + '%'
     : '<span class="null-val">N/A</span>';
 
-  const fRoe = data.fundamental.roe;
-  document.getElementById('f-roe').innerHTML = fRoe != null
-    ? (fRoe * 100).toFixed(1) + '%'
+  const fShinyo = data.fundamental.shinyo_bairitu;
+  document.getElementById('f-roe').innerHTML = fShinyo != null
+    ? fShinyo.toFixed(2) + '倍'
     : '<span class="null-val">N/A</span>';
 
-  const fOm = data.fundamental.operating_margin;
+  const fOm = data.fundamental.keijo_margin;
   document.getElementById('f-operating-margin').innerHTML = fOm != null
-    ? (fOm * 100).toFixed(1) + '%'
+    ? fOm.toFixed(1) + '%'
     : '<span class="null-val">N/A</span>';
 
   document.getElementById('f-ytd').innerHTML = fmtNull(data.fundamental.ytd_performance, '%');
@@ -222,17 +223,21 @@ function renderReport(data, isFromCache) {
 
   // ファンダメンタル詳細カード
   const f = data.fundamental;
-  const roePct = f.roe != null ? (f.roe * 100).toFixed(1) + '%' : null;
-  document.getElementById('d-roe-val').innerHTML = roePct ? roePct : '<span class="null-val">N/A</span>';
-  document.getElementById('d-roe-eval').innerHTML = f.roe_eval ? `<span class="badge ${badgeClass(f.roe_eval)}">${signalLabel(f.roe_eval)}</span>` : '';
+  document.getElementById('d-pbr-val').innerHTML = f.pbr != null ? f.pbr.toFixed(2) + 'x' : '<span class="null-val">N/A</span>';
+  document.getElementById('d-pbr-eval').innerHTML = f.pbr != null
+    ? `<span class="badge ${f.pbr < 1 ? 'buy' : f.pbr < 3 ? 'neutral' : 'sell'}">${f.pbr < 1 ? '割安' : f.pbr < 3 ? '普通' : '割高'}</span>`
+    : '';
 
-  const epsPct = f.eps_growth != null ? f.eps_growth.toFixed(1) + '%' : null;
-  document.getElementById('d-eps-val').innerHTML = epsPct ? epsPct : '<span class="null-val">N/A</span>';
-  document.getElementById('d-eps-eval').innerHTML = f.eps_growth_eval ? `<span class="badge ${badgeClass(f.eps_growth_eval)}">${signalLabel(f.eps_growth_eval)}</span>` : '';
+  document.getElementById('d-sales-val').innerHTML = f.sales_growth != null
+    ? (f.sales_growth >= 0 ? '+' : '') + f.sales_growth.toFixed(1) + '%'
+    : '<span class="null-val">N/A</span>';
+  document.getElementById('d-sales-eval').innerHTML = f.sales_growth != null
+    ? `<span class="badge ${f.sales_growth >= 10 ? 'buy' : f.sales_growth >= 0 ? 'neutral' : 'sell'}">${f.sales_growth >= 10 ? '高成長' : f.sales_growth >= 0 ? '安定' : '減収'}</span>`
+    : '';
 
-  const omPct = f.operating_margin != null ? (f.operating_margin * 100).toFixed(1) + '%' : null;
-  document.getElementById('d-om-val').innerHTML = omPct ? omPct : '<span class="null-val">N/A</span>';
-  document.getElementById('d-om-eval').innerHTML = f.operating_margin_eval ? `<span class="badge ${badgeClass(f.operating_margin_eval)}">${signalLabel(f.operating_margin_eval)}</span>` : '';
+  document.getElementById('d-vol-val').innerHTML = f.avg_volume_20 != null
+    ? f.avg_volume_20.toLocaleString() + '株'
+    : '<span class="null-val">N/A</span>';
 
   // 総合
   const oSig = data.overall_signal;
