@@ -1,5 +1,71 @@
 const API_BASE = '';
 let chartInstance = null;
+let lastPriceHistory = null;
+
+// ── チャートインジケーター表示フラグ ──────────────────────────────────────────
+const indVisible = { bb: true, volume: true, rsi: true, macd: true };
+
+function toggleIndicator(name, btn) {
+  indVisible[name] = !indVisible[name];
+  btn.classList.toggle('active', indVisible[name]);
+  if (lastPriceHistory) renderChart(lastPriceHistory);
+}
+
+// ── クライアント側インジケーター計算 ─────────────────────────────────────────
+
+function computeBBHistory(closes, period = 20, k = 2) {
+  const upper = [], middle = [], lower = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < period - 1) { upper.push(null); middle.push(null); lower.push(null); continue; }
+    const slice = closes.slice(i - period + 1, i + 1);
+    const mean = slice.reduce((a, b) => a + b, 0) / period;
+    const std = Math.sqrt(slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period);
+    upper.push(+(mean + k * std).toFixed(2));
+    middle.push(+mean.toFixed(2));
+    lower.push(+(mean - k * std).toFixed(2));
+  }
+  return { upper, middle, lower };
+}
+
+function computeRSIHistory(closes, period = 14) {
+  if (closes.length <= period) return closes.map(() => null);
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) gains += d; else losses -= d;
+  }
+  let avgGain = gains / period, avgLoss = losses / period;
+  const result = new Array(period).fill(null);
+  result.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (d < 0 ? -d : 0)) / period;
+    result.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
+  }
+  return result;
+}
+
+function computeMACDHistory(closes) {
+  const k12 = 2 / 13, k26 = 2 / 27, k9 = 2 / 10;
+  let ema12 = closes[0], ema26 = closes[0];
+  const macdLine = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i > 0) { ema12 = closes[i] * k12 + ema12 * (1 - k12); ema26 = closes[i] * k26 + ema26 * (1 - k26); }
+    macdLine.push(i < 25 ? null : +(ema12 - ema26).toFixed(4));
+  }
+  let signal = null;
+  const signalArr = [];
+  for (let i = 0; i < macdLine.length; i++) {
+    if (macdLine[i] === null) { signalArr.push(null); continue; }
+    signal = signal === null ? macdLine[i] : macdLine[i] * k9 + signal * (1 - k9);
+    signalArr.push(+signal.toFixed(4));
+  }
+  const histogram = macdLine.map((v, i) =>
+    v !== null && signalArr[i] !== null ? +(v - signalArr[i]).toFixed(4) : null
+  );
+  return { macdLine, signalLine: signalArr, histogram };
+}
 
 function setLoading(on) {
   document.getElementById('loading').style.display = on ? 'block' : 'none';
@@ -58,96 +124,269 @@ function animateCards() {
 }
 
 function renderChart(priceHistory) {
+  lastPriceHistory = priceHistory;
+
   const dates   = priceHistory.map(d => d.date);
-  // ECharts ローソク足: [open, close, low, high]
   const candles = priceHistory.map(d => [d.open, d.close, d.low, d.high]);
-  const sma20   = priceHistory.map(d => d.sma20 ?? '-');
-  const sma50   = priceHistory.map(d => d.sma50 ?? '-');
+  const closes  = priceHistory.map(d => d.close);
+  const volumes = priceHistory.map(d => d.volume ?? 0);
+  const sma20   = priceHistory.map(d => d.sma20 ?? null);
+  const sma50   = priceHistory.map(d => d.sma50 ?? null);
+
+  // インジケーター計算
+  const bb      = computeBBHistory(closes);
+  const rsiData = computeRSIHistory(closes);
+  const macdD   = computeMACDHistory(closes);
+
+  // 出来高色（陽線=緑 / 陰線=赤）
+  const volColors = priceHistory.map(d =>
+    d.close >= d.open ? 'rgba(76,175,125,0.6)' : 'rgba(224,92,92,0.6)'
+  );
 
   const el = document.getElementById('priceChart');
+  if (chartInstance) { chartInstance.dispose(); chartInstance = null; }
+  chartInstance = echarts.init(el, null, { renderer: 'canvas' });
 
-  if (chartInstance) {
-    chartInstance.dispose();
-    chartInstance = null;
+  // ── グリッド構成 ──
+  // 表示するサブチャートに応じてダイナミックにグリッドを構築
+  const showVol  = indVisible.volume;
+  const showRSI  = indVisible.rsi;
+  const showMACD = indVisible.macd;
+
+  // 高さ配分（px, 580pxチャート想定）
+  // メイン占有 = 残りをサブに分配
+  const subCount = [showVol, showRSI, showMACD].filter(Boolean).length;
+  const subH    = 90;  // 各サブ高さ(px)
+  const subGap  = 12;
+  const sliderH = 28;
+  const topPad  = 36;
+  const mainBottom = topPad + subCount * (subH + subGap) + sliderH + 16;
+  const totalH  = 580;
+  const mainH   = totalH - mainBottom - topPad;
+
+  const grids = [{ left: 70, right: 20, top: topPad, height: mainH }];
+  const xAxes = [{
+    gridIndex: 0, type: 'category', data: dates,
+    axisLine: { lineStyle: { color: '#2a2d3a' } },
+    axisLabel: { show: false },
+    splitLine: { show: false },
+    axisTick: { show: false },
+  }];
+  const yAxes = [{
+    gridIndex: 0, scale: true,
+    axisLine: { lineStyle: { color: '#2a2d3a' } },
+    axisLabel: { color: '#8b8fa8', fontSize: 10 },
+    splitLine: { lineStyle: { color: '#2a2d3a', type: 'dashed' } },
+  }];
+
+  let gridTop = topPad + mainH + subGap;
+  const subGridIndices = [];  // [vol, rsi, macd] -> gridIndex
+
+  if (showVol) {
+    const gi = grids.length;
+    subGridIndices.push({ type: 'volume', gi });
+    grids.push({ left: 70, right: 20, top: gridTop, height: subH });
+    xAxes.push({ gridIndex: gi, type: 'category', data: dates, axisLine: { lineStyle: { color: '#2a2d3a' } }, axisLabel: { show: false }, splitLine: { show: false }, axisTick: { show: false } });
+    yAxes.push({ gridIndex: gi, scale: false, axisLabel: { color: '#8b8fa8', fontSize: 9, formatter: v => v >= 1e6 ? (v / 1e6).toFixed(0) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(0) + 'K' : v }, splitLine: { show: false }, axisLine: { show: false }, splitNumber: 2 });
+    gridTop += subH + subGap;
+  }
+  if (showRSI) {
+    const gi = grids.length;
+    subGridIndices.push({ type: 'rsi', gi });
+    grids.push({ left: 70, right: 20, top: gridTop, height: subH });
+    xAxes.push({ gridIndex: gi, type: 'category', data: dates, axisLine: { lineStyle: { color: '#2a2d3a' } }, axisLabel: { show: false }, splitLine: { show: false }, axisTick: { show: false } });
+    yAxes.push({ gridIndex: gi, min: 0, max: 100, axisLabel: { color: '#8b8fa8', fontSize: 9 }, splitLine: { lineStyle: { color: '#2a2d3a', type: 'dashed' } }, axisLine: { show: false }, splitNumber: 2 });
+    gridTop += subH + subGap;
+  }
+  if (showMACD) {
+    const gi = grids.length;
+    subGridIndices.push({ type: 'macd', gi });
+    grids.push({ left: 70, right: 20, top: gridTop, height: subH });
+    xAxes.push({
+      gridIndex: gi, type: 'category', data: dates,
+      axisLine: { lineStyle: { color: '#2a2d3a' } },
+      axisLabel: {
+        color: '#8b8fa8', fontSize: 9,
+        formatter: (val, idx) => idx === 0 || val.slice(8) === '01' ? val.slice(0, 7) : '',
+      },
+      splitLine: { show: false },
+    });
+    yAxes.push({ gridIndex: gi, scale: true, axisLabel: { color: '#8b8fa8', fontSize: 9 }, splitLine: { lineStyle: { color: '#2a2d3a', type: 'dashed' } }, axisLine: { show: false }, splitNumber: 2 });
+    gridTop += subH + subGap;
   }
 
-  chartInstance = echarts.init(el, null, { renderer: 'canvas' });
+  // 最後のxAxisにラベルを表示（MACDがオフの場合）
+  if (!showMACD && xAxes.length > 1) {
+    const last = xAxes[xAxes.length - 1];
+    last.axisLabel = {
+      show: true, color: '#8b8fa8', fontSize: 9,
+      formatter: (val, idx) => idx === 0 || val.slice(8) === '01' ? val.slice(0, 7) : '',
+    };
+  } else if (xAxes.length === 1) {
+    xAxes[0].axisLabel = {
+      show: true, color: '#8b8fa8', fontSize: 9,
+      formatter: (val, idx) => idx === 0 || val.slice(8) === '01' ? val.slice(0, 7) : '',
+    };
+  }
+
+  const allGridIndices = grids.map((_, i) => i);
+
+  // ── シリーズ構成 ──
+  const legendData = ['株価', 'SMA20', 'SMA50'];
+  if (indVisible.bb) legendData.push('BB上限', 'BB下限');
+
+  const series = [
+    {
+      name: '株価', type: 'candlestick', xAxisIndex: 0, yAxisIndex: 0,
+      data: candles,
+      itemStyle: { color: '#4caf7d', color0: '#e05c5c', borderColor: '#4caf7d', borderColor0: '#e05c5c' },
+    },
+    {
+      name: 'SMA20', type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+      data: sma20, smooth: false, symbol: 'none',
+      lineStyle: { color: '#f0b040', width: 1.5 },
+    },
+    {
+      name: 'SMA50', type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+      data: sma50, smooth: false, symbol: 'none',
+      lineStyle: { color: '#e07090', width: 1.5, type: 'dashed' },
+    },
+  ];
+
+  if (indVisible.bb) {
+    series.push(
+      {
+        name: 'BB上限', type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+        data: bb.upper, smooth: false, symbol: 'none',
+        lineStyle: { color: '#5b9cf6', width: 1, type: 'dotted' },
+      },
+      {
+        name: 'BB下限', type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+        data: bb.lower, smooth: false, symbol: 'none',
+        lineStyle: { color: '#5b9cf6', width: 1, type: 'dotted' },
+        areaStyle: { color: 'rgba(91,156,246,0.05)' },
+      }
+    );
+  }
+
+  // サブチャートシリーズ
+  for (const { type, gi } of subGridIndices) {
+    if (type === 'volume') {
+      legendData.push('出来高');
+      series.push({
+        name: '出来高', type: 'bar', xAxisIndex: gi, yAxisIndex: gi,
+        data: volumes.map((v, i) => ({ value: v, itemStyle: { color: volColors[i] } })),
+        barMaxWidth: 8,
+      });
+    } else if (type === 'rsi') {
+      legendData.push('RSI');
+      series.push(
+        {
+          name: 'RSI', type: 'line', xAxisIndex: gi, yAxisIndex: gi,
+          data: rsiData, smooth: false, symbol: 'none',
+          lineStyle: { color: '#c792ea', width: 1.5 },
+        },
+        {
+          name: 'RSI70', type: 'line', xAxisIndex: gi, yAxisIndex: gi,
+          data: dates.map(() => 70), symbol: 'none',
+          lineStyle: { color: '#e05c5c', width: 1, type: 'dashed', opacity: 0.5 },
+          tooltip: { show: false }, legendHoverLink: false,
+        },
+        {
+          name: 'RSI30', type: 'line', xAxisIndex: gi, yAxisIndex: gi,
+          data: dates.map(() => 30), symbol: 'none',
+          lineStyle: { color: '#4caf7d', width: 1, type: 'dashed', opacity: 0.5 },
+          tooltip: { show: false }, legendHoverLink: false,
+        }
+      );
+    } else if (type === 'macd') {
+      legendData.push('MACD', 'シグナル');
+      series.push(
+        {
+          name: 'MACDヒスト', type: 'bar', xAxisIndex: gi, yAxisIndex: gi,
+          data: macdD.histogram.map(v => ({
+            value: v,
+            itemStyle: { color: v >= 0 ? 'rgba(76,175,125,0.7)' : 'rgba(224,92,92,0.7)' },
+          })),
+          barMaxWidth: 6,
+        },
+        {
+          name: 'MACD', type: 'line', xAxisIndex: gi, yAxisIndex: gi,
+          data: macdD.macdLine, smooth: false, symbol: 'none',
+          lineStyle: { color: '#5b9cf6', width: 1.5 },
+        },
+        {
+          name: 'シグナル', type: 'line', xAxisIndex: gi, yAxisIndex: gi,
+          data: macdD.signalLine, smooth: false, symbol: 'none',
+          lineStyle: { color: '#ff9966', width: 1.5 },
+        }
+      );
+    }
+  }
+
+  // ── ラベル表示（サブチャートタイトル） ──
+  const graphics = [];
+  for (const { type, gi } of subGridIndices) {
+    const g = grids[gi];
+    const label = type === 'volume' ? '出来高' : type === 'rsi' ? 'RSI(14)' : 'MACD(12,26,9)';
+    graphics.push({
+      type: 'text', left: 72, top: g.top + 2,
+      style: { text: label, fill: '#8b8fa8', fontSize: 9 },
+    });
+  }
 
   chartInstance.setOption({
     backgroundColor: 'transparent',
     animation: false,
+    graphic: graphics,
     legend: {
-      data: ['株価', 'SMA20', 'SMA50'],
-      textStyle: { color: '#8b8fa8', fontSize: 11 },
-      top: 4,
+      data: legendData.filter(n => !['RSI70','RSI30','MACDヒスト'].includes(n)),
+      textStyle: { color: '#8b8fa8', fontSize: 10 },
+      top: 4, right: 20,
+      selectedMode: true,
     },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'cross' },
+      axisPointer: { type: 'cross', link: [{ xAxisIndex: 'all' }] },
       backgroundColor: '#1a1d27',
       borderColor: '#2a2d3a',
       textStyle: { color: '#e8eaf0', fontSize: 11 },
-    },
-    grid: { left: 60, right: 20, top: 40, bottom: 40 },
-    xAxis: {
-      type: 'category',
-      data: dates,
-      axisLine: { lineStyle: { color: '#2a2d3a' } },
-      axisLabel: {
-        color: '#8b8fa8', fontSize: 10,
-        // 月初のみ表示
-        formatter: (val, idx) => {
-          if (idx === 0 || val.slice(8) === '01') return val.slice(0, 7);
-          return '';
-        },
+      formatter(params) {
+        if (!params.length) return '';
+        const date = params[0].axisValue;
+        let html = `<div style="font-weight:bold;margin-bottom:4px">${date}</div>`;
+        for (const p of params) {
+          if (p.seriesName === 'RSI70' || p.seriesName === 'RSI30') continue;
+          const v = Array.isArray(p.value) ? p.value : p.value;
+          if (v === null || v === undefined) continue;
+          const color = p.color?.colorStops ? '#5b9cf6' : (p.color || '#8b8fa8');
+          const fmt = Array.isArray(v)
+            ? `O:${v[0]} C:${v[1]} L:${v[2]} H:${v[3]}`
+            : typeof v === 'number' ? v.toFixed(Math.abs(v) < 10 ? 4 : 0) : v;
+          html += `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:4px"></span>${p.seriesName}: ${fmt}</div>`;
+        }
+        return html;
       },
-      splitLine: { show: false },
     },
-    yAxis: {
-      scale: true,
-      axisLine: { lineStyle: { color: '#2a2d3a' } },
-      axisLabel: { color: '#8b8fa8', fontSize: 10 },
-      splitLine: { lineStyle: { color: '#2a2d3a' } },
-    },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    grid: grids,
+    xAxis: xAxes,
+    yAxis: yAxes,
     dataZoom: [
-      { type: 'inside', start: 0, end: 100 },
-      { type: 'slider', height: 20, bottom: 4,
+      { type: 'inside', xAxisIndex: allGridIndices, start: 0, end: 100 },
+      {
+        type: 'slider', xAxisIndex: allGridIndices,
+        height: 20, bottom: 4,
         borderColor: '#2a2d3a', fillerColor: 'rgba(91,156,246,0.1)',
-        textStyle: { color: '#8b8fa8' } },
-    ],
-    series: [
-      {
-        name: '株価',
-        type: 'candlestick',
-        data: candles,
-        itemStyle: {
-          color: '#4caf7d',        // 陽線（塗り）
-          color0: '#e05c5c',       // 陰線（塗り）
-          borderColor: '#4caf7d',
-          borderColor0: '#e05c5c',
-        },
-      },
-      {
-        name: 'SMA20',
-        type: 'line',
-        data: sma20,
-        smooth: false,
-        symbol: 'none',
-        lineStyle: { color: '#639922', width: 1.5, type: 'dashed' },
-      },
-      {
-        name: 'SMA50',
-        type: 'line',
-        data: sma50,
-        smooth: false,
-        symbol: 'none',
-        lineStyle: { color: '#e07090', width: 1.5, type: 'dashed' },
+        textStyle: { color: '#8b8fa8', fontSize: 9 },
       },
     ],
+    series,
   });
 
-  // リサイズ対応
-  window.addEventListener('resize', () => chartInstance && chartInstance.resize());
+  window.removeEventListener('resize', chartInstance._resizeHandler);
+  chartInstance._resizeHandler = () => chartInstance && chartInstance.resize();
+  window.addEventListener('resize', chartInstance._resizeHandler);
 }
 
 function renderReport(data, isFromCache) {
@@ -166,6 +405,7 @@ function renderReport(data, isFromCache) {
   document.getElementById('t-macd-line').innerHTML = fmtNull(data.technical.macd.line, '', 4);
   document.getElementById('t-macd-signal').innerHTML = fmtNull(data.technical.macd.signal, '', 4);
   document.getElementById('t-macd-hist').innerHTML = fmtNull(data.technical.macd.histogram, '', 4);
+  document.getElementById('t-dev25').innerHTML = fmtNull(data.technical.ma_deviation_25, '%');
 
   const tSig = data.technical.signal;
   document.getElementById('t-signal-badge').innerHTML =
@@ -179,13 +419,18 @@ function renderReport(data, isFromCache) {
   document.getElementById('f-per').innerHTML = fmtNull(data.fundamental.per, 'x');
   document.getElementById('f-div').innerHTML = fmtNull(data.fundamental.dividend_yield, '%');
 
+  const mcap = data.fundamental.market_cap;
+  document.getElementById('f-market-cap').innerHTML = mcap != null
+    ? (mcap >= 10000 ? Math.floor(mcap / 10000) + '兆' + Math.floor(mcap % 10000) + '億円' : mcap.toLocaleString() + '億円')
+    : '<span class="null-val">N/A</span>';
+
   const fEps = data.fundamental.eps_growth;
   document.getElementById('f-eps-growth').innerHTML = fEps != null
     ? (fEps >= 0 ? '+' : '') + fEps.toFixed(1) + '%'
     : '<span class="null-val">N/A</span>';
 
   const fShinyo = data.fundamental.shinyo_bairitu;
-  document.getElementById('f-roe').innerHTML = fShinyo != null
+  document.getElementById('f-shinyo').innerHTML = fShinyo != null
     ? fShinyo.toFixed(2) + '倍'
     : '<span class="null-val">N/A</span>';
 

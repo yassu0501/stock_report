@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Stock Report Generator</title>
-  <link rel="stylesheet" href="/styles.css?v=6" />
+  <link rel="stylesheet" href="/styles.css?v=7" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 </head>
 <body>
@@ -64,6 +64,12 @@
     <!-- チャート -->
     <div class="card" id="chart-card">
       <div class="card-title">1年間 株価推移</div>
+      <div class="chart-controls">
+        <button class="ind-btn active" data-ind="bb" onclick="toggleIndicator('bb', this)">BB</button>
+        <button class="ind-btn active" data-ind="volume" onclick="toggleIndicator('volume', this)">出来高</button>
+        <button class="ind-btn active" data-ind="rsi" onclick="toggleIndicator('rsi', this)">RSI</button>
+        <button class="ind-btn active" data-ind="macd" onclick="toggleIndicator('macd', this)">MACD</button>
+      </div>
       <div class="chart-wrap">
         <div id="priceChart" style="width:100%;height:100%;"></div>
       </div>
@@ -98,6 +104,10 @@
           <span class="metric-value" id="t-macd-hist"></span>
         </div>
         <div class="metric-row">
+          <span class="metric-label">25日乖離率</span>
+          <span class="metric-value" id="t-dev25"></span>
+        </div>
+        <div class="metric-row">
           <span class="metric-label">シグナル</span>
           <span id="t-signal-badge"></span>
         </div>
@@ -128,7 +138,11 @@
         </div>
         <div class="metric-row">
           <span class="metric-label">信用倍率</span>
-          <span class="metric-value" id="f-roe"></span>
+          <span class="metric-value" id="f-shinyo"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">時価総額</span>
+          <span class="metric-value" id="f-market-cap"></span>
         </div>
         <div class="metric-row">
           <span class="metric-label">経常利益率</span>
@@ -269,6 +283,6 @@
   </div>
 </main>
 
-<script src="/app.js?v=10"></script>
+<script src="/app.js?v=11"></script>
 </body>
 </html>

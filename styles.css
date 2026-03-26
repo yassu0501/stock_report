@@ -151,8 +151,35 @@ main {
   margin-bottom: 16px;
 }
 .chart-wrap {
-  height: 480px;
+  height: 580px;
   position: relative;
+}
+
+/* ── Indicator toggle buttons ── */
+.chart-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.ind-btn {
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  border-radius: 4px;
+  border: 1px solid #3a3d4e;
+  background: transparent;
+  color: #8b8fa8;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ind-btn.active {
+  background: #2a2d3a;
+  color: #e8eaf0;
+  border-color: #5b9cf6;
+}
+.ind-btn:hover {
+  border-color: #5b9cf6;
+  color: #e8eaf0;
 }
 
 /* ── Stock header info ── */

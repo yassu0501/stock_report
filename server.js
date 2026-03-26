@@ -210,84 +210,74 @@ async function fetchKabutanFundamental(code) {
   const stockCode = code.split('.')[0];
   const url = `https://kabutan.jp/stock/?code=${stockCode}`;
   const res = await fetch(url, {
-    headers: {
-      'User-Agent': UA,
-      'Accept': 'text/html',
-      'Accept-Language': 'ja,en;q=0.9',
-    },
+    headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'ja,en;q=0.9' },
   });
   if (!res.ok) throw new Error(`Kabutan ${res.status}`);
   const html = await res.text();
   const $ = cheerio.load(html);
 
-  let per = null, pbr = null, dividendYield = null;
-
-  // th/td/spanを全収集してラベルと値をペアリング
   const allTexts = $('th, td, span, dt, dd').map((_, el) => $(el).text().trim()).get();
-  const perIdx = allTexts.findIndex(t => t === 'PER');
-  const pbrIdx = allTexts.findIndex(t => t === 'PBR');
-  const yieldIdx = allTexts.findIndex(t => t === '利回り' || t === '配当利回り');
-  const shinyoIdx = allTexts.findIndex(t => t === '信用倍率');
-
-  // 前の値の次のインデックスから検索することで、同じ値の重複取得を防ぐ
-  const parseFrom = (startIdx) => {
-    for (let i = startIdx; i < Math.min(startIdx + 20, allTexts.length); i++) {
-      const v = parseFloat(allTexts[i].replace(/,/g, ''));
-      if (!isNaN(v) && v > 0) return { value: v, next: i + 1 };
+  const findVal = (label, limit = 10) => {
+    const idx = allTexts.findIndex(t => t.includes(label));
+    if (idx < 0) return null;
+    for (let i = idx + 1; i < Math.min(idx + limit, allTexts.length); i++) {
+      const v = parseFloat(allTexts[i].replace(/,/g, '').replace(/％|%/g, ''));
+      if (!isNaN(v)) return v;
     }
-    return { value: null, next: startIdx };
+    return null;
   };
 
-  const perRes = parseFrom(perIdx + 1);
-  per = perRes.value;
-  const pbrRes = parseFrom(Math.max(perRes.next, pbrIdx + 1));
-  pbr = pbrRes.value;
-  const yieldRes = parseFrom(Math.max(pbrRes.next, yieldIdx + 1));
-  dividendYield = yieldRes.value;
-  const shinyoRes = parseFrom(Math.max(yieldRes.next, shinyoIdx + 1));
-  const shinyoBairitu = shinyoRes.value;
-
-  // 業績テーブルからEPS成長率・経常利益率・売上高成長率を取得
+  const per = findVal('PER');
+  const pbr = findVal('PBR');
+  const dividendYield = findVal('利回り');
+  const shinyoBairitu = findVal('信用倍率');
+  
+  let marketCap = null;
+  const mcapIdx = allTexts.findIndex(t => t.includes('時価総額'));
+  if (mcapIdx >= 0) {
+    const raw = allTexts[mcapIdx + 1] || '';
+    // "53兆3,081億円" -> 533081 (億円)
+    const choMatch = raw.match(/(\d+(?:\.\d+)?)\s*兆/);
+    const okuMatch = raw.match(/(\d+(?:,\d+)?(?:\.\d+)?)\s*億円/);
+    let totalOku = 0;
+    if (choMatch) totalOku += parseFloat(choMatch[1]) * 10000;
+    if (okuMatch) totalOku += parseFloat(okuMatch[1].replace(/,/g, ''));
+    if (totalOku > 0) marketCap = totalOku;
+  }
   let epsGrowth = null, keijoMargin = null, salesGrowth = null;
+  let dev5 = null, dev25 = null, dev75 = null;
+
   const tableRows = [];
   $('table tr').each((_, tr) => {
-    const cells = $(tr).find('th, td').map((_, c) => $(c).text().trim()).get();
-    tableRows.push(cells);
+    tableRows.push($(tr).find('th, td').map((_, c) => $(c).text().trim()).get());
   });
-  const headerIdx = tableRows.findIndex(r => r.includes('売上高') && r.includes('経常益') && (r.includes('１株益') || r.includes('1株益')));
-  console.log(`Kabutan table: totalRows=${tableRows.length}, headerIdx=${headerIdx}`);
-  console.log(`Kabutan table rows (30-56):`, JSON.stringify(tableRows.slice(30, 56)));
+
+  const headerIdx = tableRows.findIndex(r => r.includes('売上高') && r.includes('経常益'));
   if (headerIdx >= 0) {
     const headers = tableRows[headerIdx];
-    const salesCol = headers.indexOf('売上高');
-    const keijoCol = headers.indexOf('経常益');
-    const epsCol = headers.indexOf('１株益') >= 0 ? headers.indexOf('１株益') : headers.indexOf('1株益');
+    const salesCol = headers.indexOf('売上高'), keijoCol = headers.indexOf('経常益');
+    const epsCol = Math.max(headers.indexOf('１株益'), headers.indexOf('1株益'));
     const actualRows = tableRows.slice(headerIdx + 1).filter(r => r[0] && !r[0].includes('予') && !r[0].includes('前期比') && r.length > epsCol);
     if (actualRows.length >= 2) {
-      const prev = actualRows[actualRows.length - 2];
-      const curr = actualRows[actualRows.length - 1];
-      const prevEps = parseFloat(prev[epsCol]?.replace(/,/g, ''));
-      const currEps = parseFloat(curr[epsCol]?.replace(/,/g, ''));
-      if (!isNaN(prevEps) && !isNaN(currEps) && prevEps !== 0) {
-        epsGrowth = +((currEps - prevEps) / Math.abs(prevEps) * 100).toFixed(2);
-      }
-      const prevSales = parseFloat(prev[salesCol]?.replace(/,/g, ''));
-      const currSales = parseFloat(curr[salesCol]?.replace(/,/g, ''));
-      const currKeijo = parseFloat(curr[keijoCol]?.replace(/,/g, ''));
-      if (!isNaN(currSales) && !isNaN(currKeijo) && currSales > 0) {
-        keijoMargin = +((currKeijo / currSales) * 100).toFixed(2);
-      }
-      if (!isNaN(prevSales) && !isNaN(currSales) && prevSales > 0) {
-        salesGrowth = +((currSales - prevSales) / prevSales * 100).toFixed(2);
-      }
+      const prev = actualRows[actualRows.length - 2], curr = actualRows[actualRows.length - 1];
+      const prevEps = parseFloat(prev[epsCol]?.replace(/,/g, '')), currEps = parseFloat(curr[epsCol]?.replace(/,/g, ''));
+      if (prevEps && currEps) epsGrowth = +((currEps - prevEps) / Math.abs(prevEps) * 100).toFixed(2);
+      const prevSales = parseFloat(prev[salesCol]?.replace(/,/g, '')), currSales = parseFloat(curr[salesCol]?.replace(/,/g, '')), currKeijo = parseFloat(curr[keijoCol]?.replace(/,/g, ''));
+      if (currSales && currKeijo) keijoMargin = +((currKeijo / currSales) * 100).toFixed(2);
+      if (prevSales && currSales) salesGrowth = +((currSales - prevSales) / prevSales * 100).toFixed(2);
     }
   }
 
-  // 銘柄名
-  const name = $('h1').first().text().trim() || code;
+  const devIdx = tableRows.findIndex(r => r.includes('5日線') && r.includes('25日線'));
+  if (devIdx >= 0 && tableRows[devIdx + 1]) {
+    const row = tableRows[devIdx + 1];
+    dev5 = parseFloat(row[0]?.replace(/[^\d\.\-]/g, ''));
+    dev25 = parseFloat(row[1]?.replace(/[^\d\.\-]/g, ''));
+    dev75 = parseFloat(row[2]?.replace(/[^\d\.\-]/g, ''));
+  }
 
-  console.log(`Kabutan [${code}]: PER=${per}, PBR=${pbr}, 利回り=${dividendYield}, 信用倍率=${shinyoBairitu}, EPS成長率=${epsGrowth}%, 経常利益率=${keijoMargin}%, 売上高成長率=${salesGrowth}%`);
-  return { name, per, pbr, dividendYield, shinyoBairitu, epsGrowth, keijoMargin, salesGrowth };
+  const name = $('h1').first().text().trim() || code;
+  return { name, per, pbr, dividendYield, marketCap, shinyoBairitu, epsGrowth, keijoMargin, salesGrowth, dev5, dev25, dev75 };
 }
 
 async function getYahooCrumb() {
@@ -303,7 +293,6 @@ async function getYahooCrumb() {
   });
   if (!crumbRes.ok) throw new Error(`Crumb fetch failed: ${crumbRes.status}`);
   _yahooCrumb = await crumbRes.text();
-  console.log(`Yahoo crumb acquired: ${_yahooCrumb}`);
 }
 
 async function analyzeFundamental(code, priceHistory) {
@@ -320,7 +309,6 @@ async function analyzeFundamental(code, priceHistory) {
         'Cookie': _yahooCookie,
       },
     });
-    console.log(`Fundamental fetch [${code}]: status=${res.status}`);
     if (res.ok) {
       const data = await res.json();
       const r = data.quoteSummary?.result?.[0] || {};
@@ -335,28 +323,32 @@ async function analyzeFundamental(code, priceHistory) {
     _yahooCookie = null;
   }
 
+  const getRaw = (obj) => (obj && typeof obj === 'object' && obj.raw !== undefined) ? obj.raw : (typeof obj === 'number' ? obj : null);
   let name = info.longName || info.shortName || code;
-  let per = info.trailingPE || info.forwardPE || null;
-  let dividendYield = info.dividendYield || null;
+  let per = getRaw(info.trailingPE) || getRaw(info.forwardPE) || null;
+  let beta = getRaw(info.beta) || null;
+  let dividendYield = getRaw(info.dividendYield) || null;
 
   if (dividendYield !== null) {
-    dividendYield = dividendYield < 1.0 ? +(dividendYield * 100).toFixed(2) : +dividendYield.toFixed(2);
+    dividendYield = (dividendYield < 1.0 && dividendYield > 0) ? +(dividendYield * 100).toFixed(2) : +dividendYield.toFixed(2);
   }
 
-  // かぶたんからファンダメンタル取得（常に試みる）
-  let pbr = null, shinyoBairitu = null, epsGrowth = null, keijoMargin = null, salesGrowth = null;
+  // かぶたんからファンダメンタル取得
+  let pbr = null, shinyoBairitu = null, epsGrowth = null, keijoMargin = null, salesGrowth = null, dev25 = null, marketCap = null;
   try {
     const kb = await fetchKabutanFundamental(code);
     if (kb.name && kb.name !== code) name = kb.name;
     if (per === null && kb.per != null && !isNaN(kb.per)) per = kb.per;
     if (dividendYield === null && kb.dividendYield != null && !isNaN(kb.dividendYield)) dividendYield = kb.dividendYield;
     if (kb.pbr != null && !isNaN(kb.pbr)) pbr = kb.pbr;
+    if (kb.marketCap != null) marketCap = kb.marketCap;
     if (kb.shinyoBairitu != null && !isNaN(kb.shinyoBairitu)) shinyoBairitu = kb.shinyoBairitu;
     if (kb.epsGrowth != null && !isNaN(kb.epsGrowth)) epsGrowth = kb.epsGrowth;
     if (kb.keijoMargin != null && !isNaN(kb.keijoMargin)) keijoMargin = kb.keijoMargin;
     if (kb.salesGrowth != null && !isNaN(kb.salesGrowth)) salesGrowth = kb.salesGrowth;
+    if (kb.dev25 != null && !isNaN(kb.dev25)) dev25 = kb.dev25;
   } catch (e) {
-    console.error(`Kabutan fetch error [${code}]:`, e.message);
+    console.error(`Kabutan merge error [${code}]:`, e.message);
   }
 
   // 平均出来高（20日）
@@ -410,6 +402,9 @@ async function analyzeFundamental(code, priceHistory) {
   return {
     name, per: per !== null ? +per.toFixed(2) : null, pbr: pbr !== null ? +pbr.toFixed(2) : null,
     dividend_yield: dividendYield,
+    market_cap: marketCap,
+    beta: beta !== null ? +beta.toFixed(2) : null,
+    dev25: dev25,
     ytd_performance: ytdPerformance,
     shinyo_bairitu: shinyoBairitu, shinyo_bairitu_eval: shinyoEval,
     eps_growth: epsGrowth, eps_growth_eval: epsGrowthEval,
@@ -437,14 +432,28 @@ function generateTechnicalSummary(tech, currentPrice) {
     else if (r14 < 45) lines.push(`RSI ${r14.toFixed(1)} とやや弱め。押し目買い検討の水準。`);
     else if (r14 > 55) lines.push(`RSI ${r14.toFixed(1)} とやや強め。上昇モメンタムが継続中。`);
   }
-  if (m && m.histogram !== null) {
-    lines.push(m.histogram > 0
-      ? `MACD ヒストグラムがプラス（${m.histogram.toFixed(4)}）で上昇モメンタム継続中。`
-      : `MACD ヒストグラムがマイナス（${m.histogram.toFixed(4)}）で下降圧力あり。`);
+  if (m != null && m.histogram != null) {
+    const h = Number(m.histogram);
+    lines.push(h > 0
+      ? `MACD ヒストグラムがプラス（${h.toFixed(4)}）で上昇モメンタム継続中。`
+      : `MACD ヒストグラムがマイナス（${h.toFixed(4)}）で下降圧力あり。`);
   }
-  if (a && a.atr !== null) {
-    if (a.signal === 'high_volatility') lines.push(`ATR ${a.atr.toFixed(1)} と値動きが大きく、ボラティリティ高め。トレード時の注意が必要。`);
-    else if (a.signal === 'low_volatility') lines.push(`ATR ${a.atr.toFixed(1)} と値動きが小さく、ブレイクアウト待ちの推定。`);
+  if (tech.ma_deviation_25 != null) {
+    const dev25 = Number(tech.ma_deviation_25);
+    if (dev25 > 10) lines.push(`25日乖離率が +${dev25.toFixed(1)}% と高く、短期的な買われすぎ（過熱感）に注意。`);
+    else if (dev25 < -10) lines.push(`25日乖離率が ${dev25.toFixed(1)}% と低く、売られすぎ水準からの反発が期待できる。`);
+    else lines.push(`25日乖離率 ${dev25.toFixed(1)}% と適正範囲内。`);
+  }
+  if (tech.beta != null) {
+    const b = Number(tech.beta);
+    if (b > 1.2) lines.push(`Beta値 ${b.toFixed(2)} と市場平均よりボラティリティが高め。ハイリスク・ハイリターンの性質を持つ。`);
+    else if (b < 0.8) lines.push(`Beta値 ${b.toFixed(2)} と市場平均より動きが安定している。ディフェンシブな性質を持つ。`);
+    else lines.push(`Beta値 ${b.toFixed(2)} と市場平均に近い動きをする傾向。`);
+  }
+  if (a != null && a.atr != null) {
+    const val = Number(a.atr);
+    if (a.signal === 'high_volatility') lines.push(`ATR ${val.toFixed(1)} と値動きが大きく、ボラティリティ高め。トレード時の注意が必要。`);
+    else if (a.signal === 'low_volatility') lines.push(`ATR ${val.toFixed(1)} と値動きが小さく、ブレイクアウト待ちの推定。`);
   }
   if (bb) {
     if (bb.signal === 'oversold' && bb.lower) lines.push(`Bollinger Bands の下限（¥${Math.round(bb.lower).toLocaleString()}）付近で売られすぎ。反発の可能性がある。`);
@@ -484,6 +493,13 @@ function generateFundamentalSummary(fund) {
   }
   if (dividend_yield !== null && dividend_yield > 0) {
     lines.push(`配当利回り ${dividend_yield.toFixed(1)}% と${dividend_yield > 2.5 ? '高め。インカムゲインも期待できる。' : '配当あり。'}`);
+  }
+  const mcap = fund.market_cap;
+  if (mcap != null) {
+    if (mcap >= 100000) lines.push(`時価総額 ${Math.floor(mcap/10000)}兆${Math.floor(mcap%10000)}億円の超大型株。流動性が高く、機関投資家の資金が入りやすい。`);
+    else if (mcap >= 10000) lines.push(`時価総額 ${mcap.toLocaleString()} 億円の大型株。指数の影響を受けやすく、安定感がある。`);
+    else if (mcap >= 300) lines.push(`時価総額 ${mcap.toLocaleString()} 億円の中小型株。業績変化による株価の弾力性が期待できる。`);
+    else lines.push(`時価総額 ${mcap.toLocaleString()} 億円の小型・マイクロ株。ボラティリティが高くなりやすく、成長性が鍵。`);
   }
   if (ytd_performance !== null) {
     if (ytd_performance > 10) lines.push(`年初来パフォーマンス +${ytd_performance.toFixed(1)}% と好調。勢いが続くか注目。`);
@@ -673,7 +689,6 @@ async function fetchKabutanPrice(code) {
       pageRows++;
     });
 
-    console.log(`KabutanPrice page=${page}: rows=${pageRows}, total=${allRows.length}`);
     if (pageRows === 0) break;
     if (allRows.length >= 310) break;
   }
@@ -735,7 +750,7 @@ async function buildReport(code) {
 
   return {
     stock: { code, name, current_price: +currentPrice.toFixed(2), timestamp: new Date().toISOString() },
-    technical: techDict,
+    technical: { ...techDict, ma_deviation_25: fundDict.dev25 },
     fundamental: fundDict,
     overall_signal: overallSignal,
     confidence,
