@@ -677,24 +677,51 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
   }
 }
 
-function extractFocusPoints(stockInfo, tech, currentPrice) {
+function extractFocusPoints(stockInfo, tech, currentPrice, high52w = null, low52w = null) {
   const points = [];
   const { sma_20: s20, sma_50: s50, bollinger_bands: bb, ichimoku: ichi } = tech;
+
+  // SMA50
   if (s50 !== null) {
     if (currentPrice && currentPrice > s50)
       points.push({ title: 'SMA50 サポートライン', level: s50, importance: 4, description: `SMA50（¥${Math.round(s50).toLocaleString()}）は中期トレンドの支持線として機能する可能性。`, action: `¥${Math.round(s50).toLocaleString()} を割り込んだ場合、下降トレンド転換の可能性があるため要注意。` });
     else
       points.push({ title: 'SMA50 抵抗線', level: s50, importance: 4, description: `SMA50（¥${Math.round(s50).toLocaleString()}）は中期トレンドの抵抗線として機能する可能性。`, action: `¥${Math.round(s50).toLocaleString()} を上抜けた場合、中期上昇トレンドへの転換シグナルとして注目。` });
   }
+
+  // SMA20
   if (s20 !== null) {
     if (currentPrice && currentPrice > s20)
       points.push({ title: 'SMA20 短期サポート', level: s20, importance: 4, description: `SMA20（¥${Math.round(s20).toLocaleString()}）は短期トレンドの支持線として機能する可能性。`, action: `¥${Math.round(s20).toLocaleString()} を割り込んだ場合、短期下降転換の可能性あり。早めの対応を検討。` });
     else
       points.push({ title: 'SMA20 短期抵抗線', level: s20, importance: 3, description: `SMA20（¥${Math.round(s20).toLocaleString()}）が短期的な抵抗線として機能する可能性。`, action: `¥${Math.round(s20).toLocaleString()} を上抜けた場合、短期反転シグナルとして積極的なエントリーを検討。` });
   }
-  if (bb && bb.upper) points.push({ title: 'Bollinger Bands 上限', level: bb.upper, importance: 3, description: `Bollinger Bands 上限（¥${Math.round(bb.upper).toLocaleString()}）付近での値動きに注目。`, action: `¥${Math.round(bb.upper).toLocaleString()} に到達した場合、買われすぎによる反落を警戒。利確のタイミングを検討。` });
-  if (bb && bb.lower) points.push({ title: 'Bollinger Bands 下限', level: bb.lower, importance: 3, description: `Bollinger Bands 下限（¥${Math.round(bb.lower).toLocaleString()}）付近での反発に注目。`, action: `¥${Math.round(bb.lower).toLocaleString()} 付近まで下落した場合、売られすぎによる反発を期待してエントリーを検討。` });
-  if (ichi && ichi.cloud_top) points.push({ title: '一目均衡表 雲上限', level: ichi.cloud_top, importance: 4, description: `一目均衡表の雲上限（¥${Math.round(ichi.cloud_top).toLocaleString()}）は重要なサポートライン。`, action: `雲上限（¥${Math.round(ichi.cloud_top).toLocaleString()}）を割り込む場合は慎重に。維持できれば強気を継続できる。` });
+
+  // Bollinger Bands
+  if (bb && bb.upper) points.push({ title: 'Bollinger Bands 上限', level: bb.upper, importance: 3, description: `BB 上限（¥${Math.round(bb.upper).toLocaleString()}）付近での値動きに注目。`, action: `¥${Math.round(bb.upper).toLocaleString()} に到達した場合、買われすぎによる反落を警戒。利確のタイミングを検討。` });
+  if (bb && bb.lower) points.push({ title: 'Bollinger Bands 下限', level: bb.lower, importance: 3, description: `BB 下限（¥${Math.round(bb.lower).toLocaleString()}）付近での反発に注目。`, action: `¥${Math.round(bb.lower).toLocaleString()} 付近まで下落した場合、売られすぎによる反発を期待してエントリーを検討。` });
+
+  // 一目均衡表：雲上限・雲下限の両方
+  if (ichi && ichi.cloud_top) {
+    if (currentPrice && currentPrice >= ichi.cloud_bottom)
+      points.push({ title: '一目均衡表 雲上限', level: ichi.cloud_top, importance: 4, description: `雲上限（¥${Math.round(ichi.cloud_top).toLocaleString()}）はサポートラインとして機能する可能性。`, action: `雲上限（¥${Math.round(ichi.cloud_top).toLocaleString()}）を割り込む場合は慎重に。維持できれば強気を継続できる。` });
+  }
+  if (ichi && ichi.cloud_bottom) {
+    if (currentPrice && currentPrice < ichi.cloud_top)
+      points.push({ title: '一目均衡表 雲下限', level: ichi.cloud_bottom, importance: 4, description: `雲下限（¥${Math.round(ichi.cloud_bottom).toLocaleString()}）は抵抗線として機能する可能性。`, action: currentPrice < ichi.cloud_bottom
+        ? `¥${Math.round(ichi.cloud_bottom).toLocaleString()} を上抜けた場合、雲の中への復帰シグナルとして注目。`
+        : `雲の中にいる状態。¥${Math.round(ichi.cloud_bottom).toLocaleString()} を割り込んだ場合、弱気転換に注意。` });
+  }
+
+  // 52週高値・安値
+  if (high52w !== null && high52w > currentPrice)
+    points.push({ title: '52週高値（抵抗線）', level: Math.round(high52w), importance: 3, description: `52週高値（¥${Math.round(high52w).toLocaleString()}）は重要な節目。`, action: `¥${Math.round(high52w).toLocaleString()} を上抜けた場合、新高値ブレイクアウトで強気シグナル。` });
+  else if (high52w !== null && high52w <= currentPrice * 1.03)
+    points.push({ title: '52週高値（近接・更新中）', level: Math.round(high52w), importance: 4, description: `現在値が52週高値（¥${Math.round(high52w).toLocaleString()}）付近または更新中。`, action: `高値更新を維持できれば上昇継続。失速した場合は反落に警戒。` });
+
+  if (low52w !== null && low52w < currentPrice)
+    points.push({ title: '52週安値（サポート）', level: Math.round(low52w), importance: 3, description: `52週安値（¥${Math.round(low52w).toLocaleString()}）が下値支持として機能する可能性。`, action: `¥${Math.round(low52w).toLocaleString()} を割り込んだ場合、年間安値更新で下落加速リスクあり。要注意。` });
+
   return points.sort((a, b) => b.importance - a.importance).slice(0, 5);
 }
 
@@ -911,7 +938,7 @@ app.get('/api/v2/report', async (req, res) => {
       buy_reasons: buyReasons,
       sell_warnings: sellWarnings,
       risk_reward: riskReward,
-      focus_points: extractFocusPoints(base.stock, tech, curr),
+      focus_points: extractFocusPoints(base.stock, tech, curr, h52, l52),
       qa: generateQA(tech, fund, riskReward, base.stock.name, overallSignal),
     };
 
