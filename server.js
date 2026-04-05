@@ -560,7 +560,7 @@ function generateSellWarnings(tech, fund) {
   return warnings;
 }
 
-function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50Val, sma20Val) {
+function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50Val, sma20Val, overallSignal = 'neutral') {
   try {
     const candidates = [highPrice * 1.05];
     if (sma50Val !== null) candidates.push(sma50Val);
@@ -576,11 +576,33 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
     const stopLoss = Math.round(stopLossRaw);
     const riskPct = +((stopLoss - currentPrice) / currentPrice * 100).toFixed(2);
     const ratio = riskPct !== 0 ? +Math.abs(rewardPct / riskPct).toFixed(2) : null;
-    const evaluation = ratio === null ? 'リスク・リワード比率を計算できません'
-      : ratio >= 2.0 ? '優秀なリスク・リワード比。積極的なエントリーを検討できる水準。'
-      : ratio >= 1.5 ? '良好なリスク・リワード比。リワードがリスクを上回っている。'
-      : ratio >= 1.0 ? '許容範囲のリスク・リワード比。ただし慎重な判断を。'
-      : 'リスクがリワードを上回る（要注意）。エントリーは避けた方が無難。';
+
+    const isBuy = overallSignal === 'buy' || overallSignal === 'strong_buy';
+    const isSell = overallSignal === 'sell' || overallSignal === 'strong_sell';
+
+    let evaluation;
+    if (ratio === null) {
+      evaluation = 'リスク・リワード比率を計算できません';
+    } else if (ratio >= 2.0) {
+      evaluation = isSell
+        ? '優秀なリスク・リワード比だが、総合判定が売りシグナルのためエントリーは見送りを推奨。'
+        : '優秀なリスク・リワード比。積極的なエントリーを検討できる水準。';
+    } else if (ratio >= 1.5) {
+      evaluation = isSell
+        ? '良好なリスク・リワード比だが、総合判定が売りシグナルのため様子見を推奨。'
+        : '良好なリスク・リワード比。リワードがリスクを上回っており、エントリーを検討できる。';
+    } else if (ratio >= 1.0) {
+      evaluation = isBuy
+        ? '許容範囲のリスク・リワード比。総合判定は買いだが、比率は低めのため損切りラインを明確にしてエントリーすること。'
+        : isSell
+          ? 'リスク・リワード比が低く、総合判定も売りシグナル。エントリーは避けた方が無難。'
+          : '許容範囲のリスク・リワード比。ただし比率は低めのため、ポジションサイズを抑えて慎重に判断を。';
+    } else {
+      evaluation = isBuy
+        ? 'リスクがリワードを上回っているが、総合判定は買い。損切りラインを厳守しポジションサイズを小さくするか、押し目を待つことを推奨。'
+        : 'リスクがリワードを上回る（要注意）。エントリーは避けた方が無難。';
+    }
+
     return { reward_target: rewardTarget, reward_percentage: rewardPct, stop_loss: stopLoss, risk_percentage: riskPct, risk_reward_ratio: ratio, evaluation };
   } catch {
     return { reward_target: null, reward_percentage: null, stop_loss: null, risk_percentage: null, risk_reward_ratio: null, evaluation: '計算中にエラーが発生しました' };
@@ -608,19 +630,18 @@ function extractFocusPoints(stockInfo, tech, currentPrice) {
   return points.sort((a, b) => b.importance - a.importance).slice(0, 5);
 }
 
-function generateQA(tech, fund, riskReward, stockName) {
-  const { signal: techSignal } = tech;
+function generateQA(tech, fund, riskReward, stockName, overallSignal = 'neutral') {
   const { eps_growth_eval, keijo_margin_eval } = fund;
   const { reward_target, reward_percentage, stop_loss, risk_percentage } = riskReward;
   const signalMap = { strong_buy: '強気買い', buy: '買い', neutral: '中立', sell: '売り', strong_sell: '強気売り' };
-  const signalJP = signalMap[techSignal] || '中立';
+  const overallJP = signalMap[overallSignal] || '中立';
   const hasFundConcern = eps_growth_eval === 'negative' || keijo_margin_eval === 'poor';
 
   let buyAnswer;
-  if (techSignal === 'strong_buy') buyAnswer = `テクニカル指標は「${signalJP}」シグナルを示しており、短期スイング（1週間〜1ヶ月）なら積極的なエントリーを検討できる水準です。`;
-  else if (techSignal === 'buy') buyAnswer = `テクニカル指標は「${signalJP}」シグナルを示しており、短期スイング（1週間〜1ヶ月）なら検討価値があります。`;
-  else if (techSignal === 'sell' || techSignal === 'strong_sell') buyAnswer = `現在のテクニカル指標は「${signalJP}」シグナルを示しており、エントリーには慎重な判断が必要です。底打ちを確認してから検討することをお勧めします。`;
-  else buyAnswer = '現在のテクニカル指標は「中立」で方向感が定まっていません。より明確なシグナルが出るまで待つのも一つの選択肢です。';
+  if (overallSignal === 'strong_buy') buyAnswer = `総合判定は「${overallJP}」シグナルです。テクニカル・ファンダメンタル両面から上昇が期待できる水準で、短期スイング（1週間〜1ヶ月）なら積極的なエントリーを検討できます。`;
+  else if (overallSignal === 'buy') buyAnswer = `総合判定は「${overallJP}」シグナルです。テクニカル・ファンダメンタルを総合すると短期スイング（1週間〜1ヶ月）での検討価値があります。`;
+  else if (overallSignal === 'sell' || overallSignal === 'strong_sell') buyAnswer = `総合判定は「${overallJP}」シグナルです。テクニカル・ファンダメンタルを総合するとエントリーには慎重な判断が必要です。底打ちを確認してから検討することをお勧めします。`;
+  else buyAnswer = '総合判定は「中立」で方向感が定まっていません。より明確なシグナルが出るまで待つのも一つの選択肢です。';
   if (hasFundConcern) buyAnswer += 'なお、ファンダメンタル面では課題があるため、長期保有には様子見が賢明です。';
 
   const targetAnswer = reward_target && reward_percentage !== null
@@ -783,15 +804,30 @@ app.get('/api/v2/report', async (req, res) => {
     const h52 = hist.length ? Math.max(...hist.map(p => p.high)) : curr;
     const l52 = hist.length ? Math.min(...hist.map(p => p.low)) : curr;
 
+    const overallSignal = base.overall_signal;
+    const buyReasons = generateBuyReasons(tech, fund, curr);
+    const sellWarnings = generateSellWarnings(tech, fund);
+    const riskReward = calculateRiskReward(curr, h52, l52, tech.atr?.atr ?? null, tech.sma_50, tech.sma_20, overallSignal);
+
+    const isBuySignal = overallSignal === 'buy' || overallSignal === 'strong_buy';
+    const isSellSignal = overallSignal === 'sell' || overallSignal === 'strong_sell';
+    let overallContext = null;
+    if (isBuySignal && sellWarnings.length > 0) {
+      overallContext = `総合判定は「買い」ですが、${sellWarnings.length}件の売り警告が検出されています。これらはリスク要因として把握した上でエントリーを判断してください。買い根拠が上回っているため総合判定は買いとなっていますが、警告項目は無視せずリスク管理に活用してください。`;
+    } else if (isSellSignal && buyReasons.length > 0) {
+      overallContext = `総合判定は「売り」ですが、${buyReasons.length}件の買い根拠が検出されています。これらは個別の好材料として参考情報ですが、総合的にはリスクが上回っているため、エントリーは慎重に判断してください。`;
+    }
+
     const rpt = {
       technical_summary: generateTechnicalSummary(tech, curr),
       fundamental_summary: generateFundamentalSummary(fund),
-      overall_judgment: `${base.overall_signal.toUpperCase()} (Confidence ${(base.confidence * 100).toFixed(1)}%)`,
-      buy_reasons: generateBuyReasons(tech, fund, curr),
-      sell_warnings: generateSellWarnings(tech, fund),
-      risk_reward: calculateRiskReward(curr, h52, l52, tech.atr?.atr ?? null, tech.sma_50, tech.sma_20),
+      overall_judgment: `${overallSignal.toUpperCase()} (Confidence ${(base.confidence * 100).toFixed(1)}%)`,
+      overall_context: overallContext,
+      buy_reasons: buyReasons,
+      sell_warnings: sellWarnings,
+      risk_reward: riskReward,
       focus_points: extractFocusPoints(base.stock, tech, curr),
-      qa: generateQA(tech, fund, calculateRiskReward(curr, h52, l52, tech.atr?.atr ?? null, tech.sma_50, tech.sma_20), base.stock.name),
+      qa: generateQA(tech, fund, riskReward, base.stock.name, overallSignal),
     };
 
     const result = { ...base, report: rpt };

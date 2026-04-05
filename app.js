@@ -514,6 +514,17 @@ function renderReport(data, isFromCache) {
     document.getElementById('r-fund-summary').innerHTML =
       (rpt.fundamental_summary || '').split('\n').map(l => `<p>${l}</p>`).join('');
 
+    // 総合判定と個別シグナルの矛盾説明
+    const ctxEl = document.getElementById('r-overall-context');
+    if (ctxEl) {
+      if (rpt.overall_context) {
+        ctxEl.textContent = rpt.overall_context;
+        ctxEl.style.display = '';
+      } else {
+        ctxEl.style.display = 'none';
+      }
+    }
+
     // 買い根拠
     const buyEl = document.getElementById('r-buy-reasons');
     if (rpt.buy_reasons && rpt.buy_reasons.length > 0) {
