@@ -441,6 +441,7 @@ async function analyzeFundamental(code, priceHistory) {
   }
   if (shinyoEval === 'normal') points += 1;
   else if (shinyoEval === 'high') points -= 1;
+  else if (shinyoEval === 'low') points -= 1;  // 信用売り優勢もリスク要因
   if (epsGrowthEval === 'high_growth') points += 2;
   else if (epsGrowthEval === 'steady_growth') points += 1;
   else if (epsGrowthEval === 'negative') points -= 1;
@@ -612,6 +613,8 @@ function generateSellWarnings(tech, fund) {
     warnings.push({ indicator: '一目均衡表', detail: `現在値が雲の下（雲下限: ¥${Math.round(ichi.cloud_bottom).toLocaleString()}）にあり、弱気トレンド継続中。底打ち確認が必要。` });
   if (shinyo_bairitu_eval === 'high' && shinyo_bairitu !== null)
     warnings.push({ indicator: '信用倍率', detail: `信用倍率 ${shinyo_bairitu.toFixed(2)} 倍と高水準。信用買い残が多く、需給悪化リスクあり。` });
+  if (shinyo_bairitu_eval === 'low' && shinyo_bairitu !== null)
+    warnings.push({ indicator: '信用倍率', detail: `信用倍率 ${shinyo_bairitu.toFixed(2)} 倍と低水準。信用売りが優勢で、株価の重石になる可能性あり。` });
   if (keijo_margin_eval === 'poor' && keijo_margin !== null)
     warnings.push({ indicator: '経常利益率', detail: `経常利益率 ${keijo_margin.toFixed(1)}% と低め。本業の収益力に課題があり、改善動向を注視。` });
   return warnings;

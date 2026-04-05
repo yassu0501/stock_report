@@ -13,59 +13,7 @@ function toggleIndicator(name, btn) {
 
 // ── クライアント側インジケーター計算 ─────────────────────────────────────────
 
-function computeBBHistory(closes, period = 20, k = 2) {
-  const upper = [], middle = [], lower = [];
-  for (let i = 0; i < closes.length; i++) {
-    if (i < period - 1) { upper.push(null); middle.push(null); lower.push(null); continue; }
-    const slice = closes.slice(i - period + 1, i + 1);
-    const mean = slice.reduce((a, b) => a + b, 0) / period;
-    const std = Math.sqrt(slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period);
-    upper.push(+(mean + k * std).toFixed(2));
-    middle.push(+mean.toFixed(2));
-    lower.push(+(mean - k * std).toFixed(2));
-  }
-  return { upper, middle, lower };
-}
 
-function computeRSIHistory(closes, period = 14) {
-  if (closes.length <= period) return closes.map(() => null);
-  let gains = 0, losses = 0;
-  for (let i = 1; i <= period; i++) {
-    const d = closes[i] - closes[i - 1];
-    if (d > 0) gains += d; else losses -= d;
-  }
-  let avgGain = gains / period, avgLoss = losses / period;
-  const result = new Array(period).fill(null);
-  result.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
-  for (let i = period + 1; i < closes.length; i++) {
-    const d = closes[i] - closes[i - 1];
-    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
-    avgLoss = (avgLoss * (period - 1) + (d < 0 ? -d : 0)) / period;
-    result.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
-  }
-  return result;
-}
-
-function computeMACDHistory(closes) {
-  const k12 = 2 / 13, k26 = 2 / 27, k9 = 2 / 10;
-  let ema12 = closes[0], ema26 = closes[0];
-  const macdLine = [];
-  for (let i = 0; i < closes.length; i++) {
-    if (i > 0) { ema12 = closes[i] * k12 + ema12 * (1 - k12); ema26 = closes[i] * k26 + ema26 * (1 - k26); }
-    macdLine.push(i < 25 ? null : +(ema12 - ema26).toFixed(4));
-  }
-  let signal = null;
-  const signalArr = [];
-  for (let i = 0; i < macdLine.length; i++) {
-    if (macdLine[i] === null) { signalArr.push(null); continue; }
-    signal = signal === null ? macdLine[i] : macdLine[i] * k9 + signal * (1 - k9);
-    signalArr.push(+signal.toFixed(4));
-  }
-  const histogram = macdLine.map((v, i) =>
-    v !== null && signalArr[i] !== null ? +(v - signalArr[i]).toFixed(4) : null
-  );
-  return { macdLine, signalLine: signalArr, histogram };
-}
 
 function setLoading(on) {
   document.getElementById('loading').style.display = on ? 'block' : 'none';
