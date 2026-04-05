@@ -133,10 +133,18 @@ function renderChart(priceHistory) {
   const sma20   = priceHistory.map(d => d.sma20 ?? null);
   const sma50   = priceHistory.map(d => d.sma50 ?? null);
 
-  // インジケーター計算
-  const bb      = computeBBHistory(closes);
-  const rsiData = computeRSIHistory(closes);
-  const macdD   = computeMACDHistory(closes);
+  // インジケーター履歴（サーバー提供データを使用）
+  const bb = {
+    upper:  priceHistory.map(d => d.bb_upper  ?? null),
+    middle: priceHistory.map(d => d.bb_middle ?? null),
+    lower:  priceHistory.map(d => d.bb_lower  ?? null),
+  };
+  const rsiData = priceHistory.map(d => d.rsi ?? null);
+  const macdD = {
+    macdLine:   priceHistory.map(d => d.macd_line      ?? null),
+    signalLine: priceHistory.map(d => d.macd_signal    ?? null),
+    histogram:  priceHistory.map(d => d.macd_histogram ?? null),
+  };
 
   // 出来高色（陽線=緑 / 陰線=赤）
   const volColors = priceHistory.map(d =>

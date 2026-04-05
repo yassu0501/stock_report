@@ -177,6 +177,58 @@ function analyzeTechnical(prices, high, low) {
   };
 }
 
+// ─── Indicator History (for price_history payload) ───
+
+function bollingerBandsHistory(prices, period = 20, k = 2) {
+  return prices.map((_, i) => {
+    if (i < period - 1) return { bb_upper: null, bb_middle: null, bb_lower: null };
+    const slice = prices.slice(i - period + 1, i + 1);
+    const mean = slice.reduce((a, b) => a + b, 0) / period;
+    const std = Math.sqrt(slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period);
+    return { bb_upper: +(mean + k * std).toFixed(2), bb_middle: +mean.toFixed(2), bb_lower: +(mean - k * std).toFixed(2) };
+  });
+}
+
+function rsiHistory(prices, period = 14) {
+  if (prices.length <= period) return prices.map(() => null);
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = prices[i] - prices[i - 1];
+    if (d > 0) gains += d; else losses -= d;
+  }
+  let avgGain = gains / period, avgLoss = losses / period;
+  const result = new Array(period).fill(null);
+  result.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
+  for (let i = period + 1; i < prices.length; i++) {
+    const d = prices[i] - prices[i - 1];
+    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (d < 0 ? -d : 0)) / period;
+    result.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
+  }
+  return result;
+}
+
+function macdHistory(prices) {
+  const k12 = 2 / 13, k26 = 2 / 27, k9 = 2 / 10;
+  let ema12 = prices[0], ema26 = prices[0];
+  const macdLine = [];
+  for (let i = 0; i < prices.length; i++) {
+    if (i > 0) { ema12 = prices[i] * k12 + ema12 * (1 - k12); ema26 = prices[i] * k26 + ema26 * (1 - k26); }
+    macdLine.push(i < 25 ? null : +(ema12 - ema26).toFixed(4));
+  }
+  let sig = null;
+  const signalArr = [];
+  for (const v of macdLine) {
+    if (v === null) { signalArr.push(null); continue; }
+    sig = sig === null ? v : v * k9 + sig * (1 - k9);
+    signalArr.push(+sig.toFixed(4));
+  }
+  const histogram = macdLine.map((v, i) =>
+    v !== null && signalArr[i] !== null ? +(v - signalArr[i]).toFixed(4) : null
+  );
+  return { macdLine, signalLine: signalArr, histogram };
+}
+
 // ─── Fundamental Analysis ───
 
 function evaluateShinyoBairitu(val) {
@@ -396,7 +448,8 @@ async function analyzeFundamental(code, priceHistory) {
   else if (keijoMarginEval === 'good') points += 1;
   else if (keijoMarginEval === 'poor') points -= 1;
 
-  const score = Math.max(0, Math.min(100, (points + 6) / 17 * 100));
+  // max=+10 (per2+div1+ytd2+shinyo1+eps2+margin2), min=-5 (各-1合計)
+  const score = Math.max(0, Math.min(100, (points + 5) / 15 * 100));
   const signal = score >= 75 ? 'strong_positive' : score >= 60 ? 'positive' : score >= 40 ? 'neutral' : score >= 25 ? 'negative' : 'strong_negative';
 
   return {
@@ -525,8 +578,12 @@ function generateBuyReasons(tech, fund, currentPrice) {
     reasons.push({ indicator: 'MACD', detail: `MACD ヒストグラム +${m.histogram.toFixed(4)} でプラス。上昇モメンタムが継続中。` });
   if (r14 !== null && r14 < 30)
     reasons.push({ indicator: 'RSI（14）', detail: `RSI ${r14.toFixed(1)} と売られすぎ水準（30以下）。反発の可能性がある。` });
-  if (a && a.atr && a.atr_avg && a.atr > a.atr_avg * 1.5)
-    reasons.push({ indicator: 'ATR（ボラティリティ）', detail: `ATR ${a.atr.toFixed(1)} が平均（${a.atr_avg.toFixed(1)}）の 1.5 倍超。ブレイクアウトの可能性がある。` });
+  // ATR高ボラ：上昇トレンド中のみ上方ブレイクアウトの買い根拠とする
+  if (a && a.atr && a.atr_avg && a.atr > a.atr_avg * 1.5) {
+    const inUptrend = currentPrice && s20 && s50 && currentPrice > s20 && s20 > s50;
+    if (inUptrend)
+      reasons.push({ indicator: 'ATR（ボラティリティ）', detail: `ATR ${a.atr.toFixed(1)} が平均（${a.atr_avg.toFixed(1)}）の 1.5 倍超かつ上昇トレンド中。上方ブレイクアウトの可能性がある。` });
+  }
   if (bb && bb.signal === 'oversold' && bb.lower)
     reasons.push({ indicator: 'Bollinger Bands', detail: `現在値がバンド下限（¥${Math.round(bb.lower).toLocaleString()}）を下回り売られすぎ。平均回帰による反発を期待できる。` });
   if (ichi && ichi.signal === 'bullish' && ichi.cloud_top)
@@ -560,20 +617,33 @@ function generateSellWarnings(tech, fund) {
   return warnings;
 }
 
+function priceStep(price) {
+  if (price < 500)   return 10;
+  if (price < 2000)  return 50;
+  if (price < 10000) return 100;
+  return 500;
+}
+
 function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50Val, sma20Val, overallSignal = 'neutral') {
   try {
-    const candidates = [highPrice * 1.05];
-    if (sma50Val !== null) candidates.push(sma50Val);
+    // 報酬目標: ATRベース（前向き）を優先し、52週高値は補助的に使う
+    const atrTarget = atrVal ? currentPrice + atrVal * 3 : null;
+    const candidates = [
+      atrTarget,
+      highPrice > currentPrice ? highPrice * 1.02 : null,
+    ].filter(v => v !== null && v > currentPrice);
+    if (candidates.length === 0) candidates.push(currentPrice * 1.05);
     let rewardRaw = Math.max(...candidates);
-    let rewardTarget = Math.round(rewardRaw / 100) * 100;
-    if (rewardTarget <= currentPrice) rewardTarget = (Math.floor(rewardRaw / 100) + 1) * 100;
+    const step = priceStep(currentPrice);
+    let rewardTarget = Math.round(rewardRaw / step) * step;
+    if (rewardTarget <= currentPrice) rewardTarget = (Math.floor(rewardRaw / step) + 1) * step;
     const rewardPct = +((rewardTarget - currentPrice) / currentPrice * 100).toFixed(2);
 
     let stopLossRaw;
     if (sma20Val !== null && atrVal !== null) stopLossRaw = Math.max(sma20Val - atrVal, lowPrice52w);
     else stopLossRaw = lowPrice52w;
     if (stopLossRaw >= currentPrice) stopLossRaw = currentPrice - (atrVal !== null ? atrVal * 2 : currentPrice * 0.03);
-    const stopLoss = Math.round(stopLossRaw);
+    const stopLoss = Math.round(stopLossRaw / step) * step;
     const riskPct = +((stopLoss - currentPrice) / currentPrice * 100).toFixed(2);
     const ratio = riskPct !== 0 ? +Math.abs(rewardPct / riskPct).toFixed(2) : null;
 
@@ -584,23 +654,21 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
     if (ratio === null) {
       evaluation = 'リスク・リワード比率を計算できません';
     } else if (ratio >= 2.0) {
-      evaluation = isSell
-        ? '優秀なリスク・リワード比だが、総合判定が売りシグナルのためエントリーは見送りを推奨。'
-        : '優秀なリスク・リワード比。積極的なエントリーを検討できる水準。';
+      if (isBuy)       evaluation = '優秀なリスク・リワード比で総合判定も買い。積極的なエントリーを検討できる水準。';
+      else if (isSell) evaluation = '優秀なリスク・リワード比だが、総合判定が売りシグナルのためエントリーは見送りを推奨。';
+      else             evaluation = '優秀なリスク・リワード比。エントリーを検討できる水準。';
     } else if (ratio >= 1.5) {
-      evaluation = isSell
-        ? '良好なリスク・リワード比だが、総合判定が売りシグナルのため様子見を推奨。'
-        : '良好なリスク・リワード比。リワードがリスクを上回っており、エントリーを検討できる。';
+      if (isBuy)       evaluation = '良好なリスク・リワード比で総合判定も買い。エントリーを検討できる。';
+      else if (isSell) evaluation = '良好なリスク・リワード比だが、総合判定が売りシグナルのため様子見を推奨。';
+      else             evaluation = '良好なリスク・リワード比。リワードがリスクを上回っており、エントリーを検討できる。';
     } else if (ratio >= 1.0) {
-      evaluation = isBuy
-        ? '許容範囲のリスク・リワード比。総合判定は買いだが、比率は低めのため損切りラインを明確にしてエントリーすること。'
-        : isSell
-          ? 'リスク・リワード比が低く、総合判定も売りシグナル。エントリーは避けた方が無難。'
-          : '許容範囲のリスク・リワード比。ただし比率は低めのため、ポジションサイズを抑えて慎重に判断を。';
+      if (isBuy)       evaluation = '許容範囲のリスク・リワード比。総合判定は買いのため、損切りラインを明確にしてエントリーすること。';
+      else if (isSell) evaluation = 'リスク・リワード比が低く、総合判定も売りシグナル。エントリーは避けた方が無難。';
+      else             evaluation = '許容範囲のリスク・リワード比。ポジションサイズを抑えて慎重に判断を。';
     } else {
-      evaluation = isBuy
-        ? 'リスクがリワードを上回っているが、総合判定は買い。損切りラインを厳守しポジションサイズを小さくするか、押し目を待つことを推奨。'
-        : 'リスクがリワードを上回る（要注意）。エントリーは避けた方が無難。';
+      if (isBuy)       evaluation = 'リスクがリワードをやや上回る水準。総合判定は買いのため、押し目でのエントリーやポジションサイズを抑えた参入を検討。損切りラインは厳守すること。';
+      else if (isSell) evaluation = 'リスクがリワードを上回る（要注意）。総合判定も売りシグナルのため、エントリーは避けた方が無難。';
+      else             evaluation = 'リスクがリワードを上回る（要注意）。より良い水準まで待つか、ポジションサイズを最小限に抑えること。';
     }
 
     return { reward_target: rewardTarget, reward_percentage: rewardPct, stop_loss: stopLoss, risk_percentage: riskPct, risk_reward_ratio: ratio, evaluation };
@@ -673,44 +741,53 @@ function generateQA(tech, fund, riskReward, stockName, overallSignal = 'neutral'
 
 async function fetchKabutanPrice(code) {
   const stockCode = code.split('.')[0];
-  const allRows = [];
-  const seen = new Set();
 
-  for (let page = 1; page <= 13; page++) {
-    const url = `https://kabutan.jp/stock/kabuka?code=${stockCode}&ashi=day&page=${page}`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'ja,en;q=0.9' },
-    });
-    if (!res.ok) break;
-
-    const html = await res.text();
+  const parsePage = (html) => {
     const $ = cheerio.load(html);
-
-    let pageRows = 0;
+    const rows = [];
     $('table tr').each((_, tr) => {
       const cells = $(tr).find('th, td').map((_, c) => $(c).text().trim()).get();
       if (cells.length < 8) return;
-
       const m = cells[0].match(/(\d{2,4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
       if (!m) return;
       let year = parseInt(m[1]);
       if (year < 100) year += 2000;
       const date = `${year}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-      if (seen.has(date)) return;
-
       const open  = parseFloat(cells[1].replace(/,/g, ''));
       const high  = parseFloat(cells[2].replace(/,/g, ''));
       const low   = parseFloat(cells[3].replace(/,/g, ''));
       const close = parseFloat(cells[4].replace(/,/g, ''));
       const volume = parseInt(cells[7].replace(/,/g, '')) || 0;
       if (isNaN(close) || close <= 0) return;
-
-      seen.add(date);
-      allRows.push({ date, open: isNaN(open) ? close : open, high: isNaN(high) ? close : high, low: isNaN(low) ? close : low, close, volume });
-      pageRows++;
+      rows.push({ date, open: isNaN(open) ? close : open, high: isNaN(high) ? close : high, low: isNaN(low) ? close : low, close, volume });
     });
+    return rows;
+  };
 
-    if (pageRows === 0) break;
+  const fetchPage = async (page) => {
+    const url = `https://kabutan.jp/stock/kabuka?code=${stockCode}&ashi=day&page=${page}`;
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'ja,en;q=0.9' } });
+      if (!res.ok) return [];
+      return parsePage(await res.text());
+    } catch {
+      return [];
+    }
+  };
+
+  // 全13ページを並列フェッチ
+  const pageResults = await Promise.all(Array.from({ length: 13 }, (_, i) => fetchPage(i + 1)));
+
+  const seen = new Set();
+  const allRows = [];
+  for (const rows of pageResults) {
+    for (const row of rows) {
+      if (!seen.has(row.date)) {
+        seen.add(row.date);
+        allRows.push(row);
+        if (allRows.length >= 310) break;
+      }
+    }
     if (allRows.length >= 310) break;
   }
 
@@ -744,9 +821,12 @@ async function buildReport(code) {
 
   const name = fundDict.name || code;
 
-  // 価格履歴（252日分）
+  // 価格履歴（252日分）＋インジケーター履歴
   const recentDf = df.slice(-252);
   const offset = df.length - recentDf.length;
+  const allBB   = bollingerBandsHistory(prices);
+  const allRSI  = rsiHistory(prices);
+  const allMACD = macdHistory(prices);
   const priceHistory = recentDf.map((row, i) => {
     const pos = offset + i;
     const s20 = sma(prices.slice(0, pos + 1), 20);
@@ -760,6 +840,11 @@ async function buildReport(code) {
       volume: row.volume,
       sma20: s20 !== null ? +s20.toFixed(2) : null,
       sma50: s50 !== null ? +s50.toFixed(2) : null,
+      ...allBB[pos],
+      rsi: allRSI[pos] ?? null,
+      macd_line: allMACD.macdLine[pos] ?? null,
+      macd_signal: allMACD.signalLine[pos] ?? null,
+      macd_histogram: allMACD.histogram[pos] ?? null,
     };
   });
 
@@ -767,7 +852,7 @@ async function buildReport(code) {
   const fundScore = fundDict.score;
   const overallScore = techScore * 0.6 + fundScore * 0.4;
   const confidence = +(overallScore / 100).toFixed(4);
-  const overallSignal = overallScore >= 60 ? 'buy' : overallScore <= 40 ? 'sell' : 'neutral';
+  const overallSignal = overallScore >= 75 ? 'strong_buy' : overallScore >= 60 ? 'buy' : overallScore <= 25 ? 'strong_sell' : overallScore <= 40 ? 'sell' : 'neutral';
 
   return {
     stock: { code, name, current_price: +currentPrice.toFixed(2), timestamp: new Date().toISOString() },
