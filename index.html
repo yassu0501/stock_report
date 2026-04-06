@@ -69,7 +69,13 @@
         <button class="ind-btn active" data-ind="volume" onclick="toggleIndicator('volume', this)">出来高</button>
         <button class="ind-btn active" data-ind="rsi" onclick="toggleIndicator('rsi', this)">RSI</button>
         <button class="ind-btn active" data-ind="macd" onclick="toggleIndicator('macd', this)">MACD</button>
+        <span class="ctrl-sep"></span>
+        <button class="ind-btn period-btn" data-period="1M" onclick="setPeriod('1M')">1M</button>
+        <button class="ind-btn period-btn" data-period="3M" onclick="setPeriod('3M')">3M</button>
+        <button class="ind-btn period-btn" data-period="6M" onclick="setPeriod('6M')">6M</button>
+        <button class="ind-btn period-btn active" data-period="1Y" onclick="setPeriod('1Y')">1Y</button>
       </div>
+      <div id="volume-anomaly-banner" style="display:none;" class="volume-anomaly-banner"></div>
       <div class="chart-wrap">
         <div id="priceChart" style="width:100%;height:100%;"></div>
       </div>
@@ -106,6 +112,13 @@
         <div class="metric-row">
           <span class="metric-label">25日乖離率</span>
           <span class="metric-value" id="t-dev25"></span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">ボラティリティ</span>
+          <div class="metric-right">
+            <span class="metric-value" id="t-vol-std"></span>
+            <span id="t-vol-badge"></span>
+          </div>
         </div>
         <div class="metric-row">
           <span class="metric-label">シグナル</span>
@@ -192,6 +205,14 @@
             <span class="metric-value" id="d-ichi-val"></span>
             <span id="d-ichi-sig"></span>
           </div>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">チャートパターン</span>
+          <div class="metric-right" id="d-patterns"></div>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">高値・安値トレンド</span>
+          <div class="metric-right" id="d-trend"></div>
         </div>
       </div>
 

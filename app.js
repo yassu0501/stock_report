@@ -1,6 +1,9 @@
 const API_BASE = '';
 let chartInstance = null;
 let lastPriceHistory = null;
+let currentPeriod = '1Y';
+let lastAllGridIndices = [0];
+const PERIOD_DAYS = { '1M': 21, '3M': 63, '6M': 126, '1Y': Infinity };
 
 // ── チャートインジケーター表示フラグ ──────────────────────────────────────────
 const indVisible = { bb: true, volume: true, rsi: true, macd: true };
@@ -9,6 +12,23 @@ function toggleIndicator(name, btn) {
   indVisible[name] = !indVisible[name];
   btn.classList.toggle('active', indVisible[name]);
   if (lastPriceHistory) renderChart(lastPriceHistory);
+}
+
+function setPeriod(period) {
+  currentPeriod = period;
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.period === period);
+  });
+  if (!chartInstance || !lastPriceHistory) return;
+  const len = lastPriceHistory.length;
+  const days = PERIOD_DAYS[period];
+  const start = days >= len ? 0 : Math.max(0, (len - days) / len * 100);
+  chartInstance.setOption({
+    dataZoom: [
+      { type: 'inside', xAxisIndex: lastAllGridIndices, start, end: 100 },
+      { type: 'slider', xAxisIndex: lastAllGridIndices, start, end: 100 },
+    ],
+  });
 }
 
 // ── クライアント側インジケーター計算 ─────────────────────────────────────────
@@ -186,6 +206,7 @@ function renderChart(priceHistory) {
   }
 
   const allGridIndices = grids.map((_, i) => i);
+  lastAllGridIndices = allGridIndices;
 
   // ── シリーズ構成 ──
   const legendData = ['株価', 'SMA20', 'SMA50'];
@@ -291,6 +312,12 @@ function renderChart(priceHistory) {
     });
   }
 
+  const dzStart = (() => {
+    const len = priceHistory.length;
+    const days = PERIOD_DAYS[currentPeriod];
+    return days >= len ? 0 : Math.max(0, (len - days) / len * 100);
+  })();
+
   chartInstance.setOption({
     backgroundColor: 'transparent',
     animation: false,
@@ -329,12 +356,13 @@ function renderChart(priceHistory) {
     xAxis: xAxes,
     yAxis: yAxes,
     dataZoom: [
-      { type: 'inside', xAxisIndex: allGridIndices, start: 0, end: 100 },
+      { type: 'inside', xAxisIndex: allGridIndices, start: dzStart, end: 100 },
       {
         type: 'slider', xAxisIndex: allGridIndices,
         height: 20, bottom: 4,
         borderColor: '#2a2d3a', fillerColor: 'rgba(91,156,246,0.1)',
         textStyle: { color: '#8b8fa8', fontSize: 9 },
+        start: dzStart, end: 100,
       },
     ],
     series,
@@ -370,6 +398,17 @@ function renderReport(data, isFromCache) {
   document.getElementById('t-score-text').textContent = `${tScore.toFixed(1)}%`;
   document.getElementById('t-score-bar').style.width = `${tScore}%`;
   document.getElementById('t-score-bar').style.background = signalColor(tSig);
+
+  // B-5: ボラティリティ分類
+  const volData = data.volatility;
+  const VOL_LABEL = { low: '低ボラ', medium: '中ボラ', high: '高ボラ', unknown: '不明' };
+  const VOL_BADGE = { low: 'neutral', medium: 'neutral', high: 'sell', unknown: 'neutral' };
+  document.getElementById('t-vol-std').innerHTML = volData?.std_pct != null
+    ? volData.std_pct + '%'
+    : '<span class="null-val">N/A</span>';
+  document.getElementById('t-vol-badge').innerHTML = volData
+    ? `<span class="badge ${VOL_BADGE[volData.class] || 'neutral'}">${VOL_LABEL[volData.class] || '不明'}</span>`
+    : '';
 
   // ファンダメンタル
   document.getElementById('f-per').innerHTML = fmtNull(data.fundamental.per, 'x');
@@ -421,6 +460,41 @@ function renderReport(data, isFromCache) {
     ? `${ichi.cloud_bottom.toFixed(0)} ～ ${ichi.cloud_top.toFixed(0)}`
     : '<span class="null-val">N/A</span>';
   document.getElementById('d-ichi-sig').innerHTML = ichi ? `<span class="badge ${badgeClass(ichi.signal)}">${signalLabel(ichi.signal)}</span>` : '';
+
+  // B-1: チャートパターン検出
+  const cp = data.chart_patterns;
+  if (cp) {
+    const patternBadges = [];
+    if (cp.golden_cross) patternBadges.push('<span class="badge buy">GC</span>');
+    if (cp.dead_cross)   patternBadges.push('<span class="badge sell">DC</span>');
+    document.getElementById('d-patterns').innerHTML =
+      patternBadges.length ? patternBadges.join(' ') : '<span class="null-val">なし</span>';
+
+    const trendBadges = [];
+    if      (cp.higher_highs && cp.higher_lows) trendBadges.push('<span class="badge buy">高値・安値切り上げ</span>');
+    else if (cp.lower_highs  && cp.lower_lows)  trendBadges.push('<span class="badge sell">高値・安値切り下げ</span>');
+    else {
+      if (cp.higher_highs) trendBadges.push('<span class="badge buy">高値切り上げ</span>');
+      if (cp.higher_lows)  trendBadges.push('<span class="badge buy">安値切り上げ</span>');
+      if (cp.lower_highs)  trendBadges.push('<span class="badge sell">高値切り下げ</span>');
+      if (cp.lower_lows)   trendBadges.push('<span class="badge sell">安値切り下げ</span>');
+    }
+    document.getElementById('d-trend').innerHTML =
+      trendBadges.length ? trendBadges.join(' ') : '<span class="null-val">なし</span>';
+  }
+
+  // B-2: 出来高異常検知バナー
+  const va = data.volume_anomaly;
+  const banner = document.getElementById('volume-anomaly-banner');
+  if (banner) {
+    if (va?.anomaly) {
+      banner.textContent =
+        `⚡ 出来高急増：直近出来高が20日平均の ${va.ratio}倍（${va.current_volume?.toLocaleString()}株 vs 平均 ${va.avg_volume?.toLocaleString()}株）`;
+      banner.style.display = 'block';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
 
   // ファンダメンタル詳細カード
   const f = data.fundamental;

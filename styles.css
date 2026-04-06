@@ -155,6 +155,17 @@ main {
   position: relative;
 }
 
+/* ── Volume anomaly banner ── */
+.volume-anomaly-banner {
+  margin-bottom: 8px;
+  padding: 6px 12px;
+  background: rgba(224, 150, 60, 0.15);
+  border: 1px solid rgba(224, 150, 60, 0.5);
+  border-radius: 4px;
+  color: #e0963c;
+  font-size: 0.8rem;
+}
+
 /* ── Indicator toggle buttons ── */
 .chart-controls {
   display: flex;
@@ -180,6 +191,12 @@ main {
 .ind-btn:hover {
   border-color: #5b9cf6;
   color: #e8eaf0;
+}
+.ctrl-sep {
+  width: 1px;
+  background: #3a3d4e;
+  margin: 0 4px;
+  align-self: stretch;
 }
 
 /* ── Stock header info ── */

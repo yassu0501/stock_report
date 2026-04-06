@@ -229,6 +229,82 @@ function macdHistory(prices) {
   return { macdLine, signalLine: signalArr, histogram };
 }
 
+// ─── B-1: Chart Pattern Detection ───
+
+function smaHistory(prices, period) {
+  const result = new Array(prices.length).fill(null);
+  for (let i = period - 1; i < prices.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += prices[j];
+    result[i] = sum / period;
+  }
+  return result;
+}
+
+function detectChartPatterns(prices, highs, lows) {
+  const len = prices.length;
+  const LOOKBACK = 10;
+  if (len < 50 + LOOKBACK) {
+    return { golden_cross: false, dead_cross: false, higher_highs: false, higher_lows: false, lower_highs: false, lower_lows: false };
+  }
+
+  // SMA配列を事前計算してからGC/DC判定
+  const sma20Arr = smaHistory(prices, 20);
+  const sma50Arr = smaHistory(prices, 50);
+  let goldenCross = false, deadCross = false;
+  for (let i = len - LOOKBACK; i < len; i++) {
+    const prev20 = sma20Arr[i - 1], prev50 = sma50Arr[i - 1];
+    const curr20 = sma20Arr[i],     curr50 = sma50Arr[i];
+    if (prev20 === null || prev50 === null || curr20 === null || curr50 === null) continue;
+    if (prev20 <= prev50 && curr20 > curr50) goldenCross = true;
+    if (prev20 >= prev50 && curr20 < curr50) deadCross = true;
+  }
+
+  // 直近5本の高値・安値トレンド判定（null除去）
+  const N = 5;
+  const rh = highs.slice(-N).filter(v => v != null);
+  const rl = lows.slice(-N).filter(v => v != null);
+  if (rh.length < N || rl.length < N) {
+    return { golden_cross: goldenCross, dead_cross: deadCross, higher_highs: false, higher_lows: false, lower_highs: false, lower_lows: false };
+  }
+  const higherHighs = rh.every((v, i) => i === 0 || v > rh[i - 1]);
+  const higherLows  = rl.every((v, i) => i === 0 || v > rl[i - 1]);
+  const lowerHighs  = rh.every((v, i) => i === 0 || v < rh[i - 1]);
+  const lowerLows   = rl.every((v, i) => i === 0 || v < rl[i - 1]);
+
+  return { golden_cross: goldenCross, dead_cross: deadCross, higher_highs: higherHighs, higher_lows: higherLows, lower_highs: lowerHighs, lower_lows: lowerLows };
+}
+
+// ─── B-2: Volume Anomaly Detection ───
+
+function detectVolumeAnomaly(volumes, period = 20) {
+  if (volumes.length < period + 1) return { anomaly: false, ratio: null, avg_volume: null, current_volume: null };
+  const current = volumes[volumes.length - 1];
+  const past = volumes.slice(-(period + 1), -1);
+  const avg = past.reduce((a, b) => a + b, 0) / period;
+  if (avg === 0) return { anomaly: false, ratio: null, avg_volume: null, current_volume: current };
+  const ratio = current / avg;
+  return {
+    anomaly: ratio >= 2.0,
+    ratio: +ratio.toFixed(2),
+    avg_volume: Math.round(avg),
+    current_volume: current,
+  };
+}
+
+// ─── B-5: Price Volatility Classification ───
+
+function classifyVolatility(prices, period = 30) {
+  if (prices.length < period) return { class: 'unknown', std_pct: null };
+  const recent = prices.slice(-period);
+  const mean = recent.reduce((a, b) => a + b, 0) / period;
+  if (mean === 0) return { class: 'unknown', std_pct: null };
+  const std = Math.sqrt(recent.reduce((s, v) => s + (v - mean) ** 2, 0) / (period - 1));
+  const stdPct = (std / mean) * 100;
+  const cls = stdPct < 2 ? 'low' : stdPct < 5 ? 'medium' : 'high';
+  return { class: cls, std_pct: +stdPct.toFixed(2) };
+}
+
 // ─── Fundamental Analysis ───
 
 function evaluateShinyoBairitu(val) {
@@ -835,7 +911,11 @@ async function buildReport(code) {
   const lows = df.map(r => r.low);
   const currentPrice = prices[prices.length - 1];
 
+  const volumes = df.map(r => r.volume ?? 0);
   const techDict = analyzeTechnical(prices, highs, lows);
+  const chartPatterns = detectChartPatterns(prices, highs, lows);
+  const volumeAnomaly = detectVolumeAnomaly(volumes);
+  const volatility = classifyVolatility(prices);
 
   let fundDict;
   try {
@@ -891,6 +971,9 @@ async function buildReport(code) {
     overall_signal: overallSignal,
     confidence,
     price_history: priceHistory,
+    chart_patterns: chartPatterns,
+    volume_anomaly: volumeAnomaly,
+    volatility,
   };
 }
 
