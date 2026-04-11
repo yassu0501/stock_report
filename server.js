@@ -330,6 +330,66 @@ function classifyVolatility(prices, period = 30) {
   return { class: cls, std_pct: +stdPct.toFixed(2) };
 }
 
+// ─── B-9: Price Gap Detection ───
+
+function detectPriceGap(df, threshold = 2.0) {
+  if (df.length < 2) return { gap_type: 'none', gap_pct: null };
+  const prev = df[df.length - 2];
+  const curr = df[df.length - 1];
+  if (!prev.close || !curr.open) return { gap_type: 'none', gap_pct: null };
+  const gapPct = +((curr.open - prev.close) / prev.close * 100).toFixed(2);
+  const gap_type = gapPct >= threshold ? 'up' : gapPct <= -threshold ? 'down' : 'none';
+  return { gap_type, gap_pct: gapPct };
+}
+
+// ─── B-10: Max Drawdown ───
+
+function calcMaxDrawdown(df) {
+  if (df.length < 2) return { max_drawdown_pct: null, peak_price: null };
+  let peak = df[0].high;
+  let maxDD = 0;
+  let peakPrice = df[0].high;
+  for (const row of df) {
+    if (row.high > peak) peak = row.high;
+    const dd = (row.low - peak) / peak * 100;
+    if (dd < maxDD) { maxDD = dd; peakPrice = peak; }
+  }
+  return { max_drawdown_pct: +maxDD.toFixed(2), peak_price: +peakPrice.toFixed(2) };
+}
+
+// ─── B-14: Period Performance ───
+
+function calcPerformance(df) {
+  if (df.length < 2) return { perf_1m: null, perf_3m: null, perf_6m: null, perf_1y: null };
+  const current = df[df.length - 1].close;
+  const perf = (days) => {
+    const targetIdx = Math.max(0, df.length - 1 - days);
+    return +((current - df[targetIdx].close) / df[targetIdx].close * 100).toFixed(2);
+  };
+  return {
+    perf_1m: df.length > 21  ? perf(21)  : null,
+    perf_3m: df.length > 63  ? perf(63)  : null,
+    perf_6m: df.length > 126 ? perf(126) : null,
+    perf_1y: df.length > 252 ? perf(252) : perf(df.length - 1),
+  };
+}
+
+// ─── B-15: Consecutive Candle Streak ───
+
+function countStreak(df) {
+  if (df.length < 1) return { streak_type: 'flat', streak_count: 0 };
+  const last = df[df.length - 1];
+  const type = last.close > last.open ? 'up' : last.close < last.open ? 'down' : 'flat';
+  let count = 1;
+  for (let i = df.length - 2; i >= 0; i--) {
+    const d = df[i];
+    const t = d.close > d.open ? 'up' : d.close < d.open ? 'down' : 'flat';
+    if (t === type && type !== 'flat') count++;
+    else break;
+  }
+  return { streak_type: type, streak_count: count };
+}
+
 // ─── Fundamental Analysis ───
 
 function evaluateShinyoBairitu(val) {
@@ -991,7 +1051,11 @@ async function buildReport(code) {
   const techDict = analyzeTechnical(prices, highs, lows);
   const chartPatterns = detectChartPatterns(prices, highs, lows);
   const volumeAnomaly = detectVolumeAnomaly(volumes);
-  const volatility = classifyVolatility(prices);
+  const volatility    = classifyVolatility(prices);
+  const priceGap      = detectPriceGap(df);
+  const maxDrawdown   = calcMaxDrawdown(df.slice(-252));
+  const performance   = calcPerformance(df);
+  const streak        = countStreak(df);
 
   let fundDict;
   try {
@@ -1070,6 +1134,10 @@ async function buildReport(code) {
     chart_patterns: chartPatterns,
     volume_anomaly: volumeAnomaly,
     volatility,
+    price_gap:    priceGap,
+    max_drawdown: maxDrawdown,
+    performance,
+    streak,
   };
 }
 

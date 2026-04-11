@@ -497,6 +497,44 @@ function renderReport(data, isFromCache) {
     }
   }
 
+  // B-14: 期間別騰落率
+  const perf = data.performance;
+  const fmtPerf = (v) => v != null
+    ? `<span style="color:${v >= 0 ? 'var(--buy)' : 'var(--sell)'}">${v >= 0 ? '+' : ''}${v.toFixed(1)}%</span>`
+    : '<span class="null-val">N/A</span>';
+  document.getElementById('p-perf-1m').innerHTML = fmtPerf(perf?.perf_1m);
+  document.getElementById('p-perf-3m').innerHTML = fmtPerf(perf?.perf_3m);
+  document.getElementById('p-perf-6m').innerHTML = fmtPerf(perf?.perf_6m);
+  document.getElementById('p-perf-1y').innerHTML = fmtPerf(perf?.perf_1y);
+
+  // B-10: 最大ドローダウン
+  const dd = data.max_drawdown;
+  document.getElementById('p-max-dd').innerHTML = dd?.max_drawdown_pct != null
+    ? `<span style="color:var(--sell)">${dd.max_drawdown_pct.toFixed(1)}%</span>`
+    : '<span class="null-val">N/A</span>';
+
+  // B-15: 連続陽線・陰線
+  const st = data.streak;
+  const STREAK_LABEL = { up: '陽線', down: '陰線', flat: '同値' };
+  const STREAK_BADGE = { up: 'buy', down: 'sell', flat: 'neutral' };
+  document.getElementById('p-streak-count').innerHTML = st
+    ? `${st.streak_count}日連続`
+    : '<span class="null-val">N/A</span>';
+  document.getElementById('p-streak-badge').innerHTML = st
+    ? `<span class="badge ${STREAK_BADGE[st.streak_type]}">${STREAK_LABEL[st.streak_type]}</span>`
+    : '';
+
+  // B-9: 価格ギャップ
+  const gap = data.price_gap;
+  const GAP_BADGE = { up: 'buy', down: 'sell', none: 'neutral' };
+  const GAP_LABEL = { up: 'ギャップアップ', down: 'ギャップダウン', none: 'なし' };
+  document.getElementById('p-gap-pct').innerHTML = gap?.gap_pct != null
+    ? `${gap.gap_pct >= 0 ? '+' : ''}${gap.gap_pct.toFixed(2)}%`
+    : '<span class="null-val">N/A</span>';
+  document.getElementById('p-gap-badge').innerHTML = gap
+    ? `<span class="badge ${GAP_BADGE[gap.gap_type]}">${GAP_LABEL[gap.gap_type]}</span>`
+    : '';
+
   // ファンダメンタル詳細カード
   const f = data.fundamental;
   document.getElementById('d-pbr-val').innerHTML = f.pbr != null ? f.pbr.toFixed(2) + 'x' : '<span class="null-val">N/A</span>';

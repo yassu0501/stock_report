@@ -245,6 +245,55 @@
       </div>
     </div>
 
+    <!-- パフォーマンス & モメンタム (B-9/10/14/15) -->
+    <div class="card" style="margin-top:16px;">
+      <div class="card-title">パフォーマンス &amp; モメンタム</div>
+      <div class="grid-2">
+        <!-- B-14: 期間別騰落率 -->
+        <div>
+          <div class="metric-section-label" style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;">期間別騰落率</div>
+          <div class="metric-row">
+            <span class="metric-label">1ヶ月</span>
+            <span class="metric-value" id="p-perf-1m"></span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">3ヶ月</span>
+            <span class="metric-value" id="p-perf-3m"></span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">6ヶ月</span>
+            <span class="metric-value" id="p-perf-6m"></span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">1年</span>
+            <span class="metric-value" id="p-perf-1y"></span>
+          </div>
+        </div>
+        <!-- B-10 / B-15 / B-9 -->
+        <div>
+          <div class="metric-section-label" style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px;">リスク &amp; モメンタム</div>
+          <div class="metric-row">
+            <span class="metric-label">最大ドローダウン</span>
+            <span class="metric-value" id="p-max-dd"></span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">連続陽線/陰線</span>
+            <div class="metric-right">
+              <span class="metric-value" id="p-streak-count"></span>
+              <span id="p-streak-badge"></span>
+            </div>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">本日ギャップ</span>
+            <div class="metric-right">
+              <span class="metric-value" id="p-gap-pct"></span>
+              <span id="p-gap-badge"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- テクニカルサマリー & ファンダメンタルサマリー -->
     <div class="grid-2" style="margin-top:16px;">
       <div class="card" id="tech-summary-card">
