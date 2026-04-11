@@ -149,23 +149,46 @@ function analyzeTechnical(prices, high, low) {
   const ichiData = ichimoku(high, low, prices);
 
   let points = 0;
+  let activeMax = 0;  // 有効指標ごとの最大ポイント合計（null除外した動的正規化用）
+
   if (sma20 && sma50 && current) {
+    activeMax += 2;
     if (current > sma20 && sma20 > sma50) points += 2;
     else if (current < sma20 && sma20 < sma50) points -= 2;
   }
   if (rsi14 !== null) {
+    activeMax += 2;
     if (rsi14 < 30) points += 2;
     else if (rsi14 > 70) points -= 2;
     else if (rsi14 < 45) points += 1;
-    else if (rsi14 > 55) points -= 1;
+    // RSI 45〜70 は中立〜上昇トレンドとして 0 点（上昇中の株を不当にペナルティしない）
   }
-  if (macdData.histogram !== null) points += macdData.histogram > 0 ? 2 : -2;
-  if (bbData.signal === 'oversold') points += 2;
-  else if (bbData.signal === 'overbought') points -= 2;
-  if (ichiData.signal === 'bullish') points += 2;
-  else if (ichiData.signal === 'bearish') points -= 2;
+  if (macdData.histogram !== null) {
+    activeMax += 2;
+    // ヒストグラムを価格比で評価し、微小値（0.1%未満）は±1に抑える
+    const relH = macdData.histogram / (current || 1);
+    if (relH > 0.001) points += 2;
+    else if (relH > 0) points += 1;
+    else if (relH > -0.001) points -= 1;
+    else points -= 2;
+  }
+  if (bbData.upper !== null) {
+    activeMax += 2;
+    if (bbData.signal === 'oversold') points += 2;
+    else if (bbData.signal === 'overbought') points -= 2;
+  }
+  if (ichiData.cloud_top !== null) {
+    activeMax += 2;
+    if (ichiData.signal === 'bullish') points += 2;
+    else if (ichiData.signal === 'bearish') points -= 2;
+  }
 
-  const score = Math.max(0, Math.min(100, (points + 10) / 20 * 100));
+  // 有効指標数に基づいて正規化（null多時にスコアが50に偽集中するのを防ぐ）
+  const normBase  = activeMax === 0 ? 10 : activeMax;
+  const normRange = activeMax === 0 ? 20 : activeMax * 2;
+  const rawScore = Math.max(0, Math.min(100, (points + normBase) / normRange * 100));
+  // 有効指標が 1 つ以下は信頼性が低いため neutral 寄りに制限（strong_buy/sell を防ぐ）
+  const score = activeMax <= 2 ? Math.max(35, Math.min(65, rawScore)) : rawScore;
   const signal = score >= 75 ? 'strong_buy' : score >= 60 ? 'buy' : score >= 40 ? 'neutral' : score >= 25 ? 'sell' : 'strong_sell';
 
   return {
@@ -513,7 +536,8 @@ async function analyzeFundamental(code, priceHistory) {
   if (ytdPerformance !== null) {
     if (ytdPerformance > 5) points += 2;
     else if (ytdPerformance > 0) points += 1;
-    else points -= 1;
+    else if (ytdPerformance >= -5) points -= 1;
+    else points -= 2;
   }
   if (shinyoEval === 'normal') points += 1;
   else if (shinyoEval === 'high') points -= 1;
@@ -524,9 +548,14 @@ async function analyzeFundamental(code, priceHistory) {
   if (keijoMarginEval === 'excellent') points += 2;
   else if (keijoMarginEval === 'good') points += 1;
   else if (keijoMarginEval === 'poor') points -= 1;
+  if (pbr !== null) {
+    if (pbr < 1.0) points += 2;      // 解散価値以下（割安）
+    else if (pbr < 1.5) points += 1; // 割安水準
+    else if (pbr > 3.0) points -= 1; // 割高
+  }
 
-  // max=+10 (per2+div1+ytd2+shinyo1+eps2+margin2), min=-5 (各-1合計)
-  const score = Math.max(0, Math.min(100, (points + 5) / 15 * 100));
+  // max=+12 (per2+div1+ytd2+shinyo1+eps2+margin2+pbr2), min=-7 (per-1+ytd-2+shinyo-1+eps-1+margin-1+pbr-1)
+  const score = Math.max(0, Math.min(100, (points + 7) / 19 * 100));
   const signal = score >= 75 ? 'strong_positive' : score >= 60 ? 'positive' : score >= 40 ? 'neutral' : score >= 25 ? 'negative' : 'strong_negative';
 
   return {
@@ -960,9 +989,29 @@ async function buildReport(code) {
 
   const techScore = techDict.score;
   const fundScore = fundDict.score;
-  const overallScore = techScore * 0.6 + fundScore * 0.4;
+  let overallScore = techScore * 0.6 + fundScore * 0.4;
+
+  // B-1: チャートパターンをスコアに反映（GC/DC ±5点、高値安値切り上げ/切り下げ ±3点）
+  // GC/DC は現在の SMA 配置が一致している場合のみ有効（失速後の誤加算を防ぐ）
+  const sma20Now = techDict.sma_20, sma50Now = techDict.sma_50;
+  if (chartPatterns.golden_cross && sma20Now !== null && sma50Now !== null && sma20Now > sma50Now)
+    overallScore = Math.min(100, overallScore + 5);
+  if (chartPatterns.dead_cross && sma20Now !== null && sma50Now !== null && sma20Now < sma50Now)
+    overallScore = Math.max(0, overallScore - 5);
+  if (chartPatterns.higher_highs && chartPatterns.higher_lows) overallScore = Math.min(100, overallScore + 3);
+  if (chartPatterns.lower_highs  && chartPatterns.lower_lows)  overallScore = Math.max(0,   overallScore - 3);
+
+  // B-2: 出来高急増をトレンド方向に応じてスコアに反映（±3点）
+  if (volumeAnomaly.anomaly) {
+    const inUptrend   = techDict.signal === 'buy'  || techDict.signal === 'strong_buy';
+    const inDowntrend = techDict.signal === 'sell' || techDict.signal === 'strong_sell';
+    if (inUptrend)   overallScore = Math.min(100, overallScore + 3);
+    if (inDowntrend) overallScore = Math.max(0,   overallScore - 3);
+  }
+
+  overallScore = +overallScore.toFixed(2);
   const confidence = +(overallScore / 100).toFixed(4);
-  const overallSignal = overallScore >= 75 ? 'strong_buy' : overallScore >= 60 ? 'buy' : overallScore <= 25 ? 'strong_sell' : overallScore <= 40 ? 'sell' : 'neutral';
+  const overallSignal = overallScore >= 75 ? 'strong_buy' : overallScore >= 60 ? 'buy' : overallScore < 25 ? 'strong_sell' : overallScore <= 40 ? 'sell' : 'neutral';
 
   return {
     stock: { code, name, current_price: +currentPrice.toFixed(2), timestamp: new Date().toISOString() },
