@@ -673,7 +673,7 @@ function generateFundamentalSummary(fund) {
   return lines.length ? lines.join('\n') : 'ファンダメンタル指標のデータが不足しているため、判定できません。';
 }
 
-function generateBuyReasons(tech, fund, currentPrice) {
+function generateBuyReasons(tech, fund, currentPrice, chartPatterns = null) {
   const reasons = [];
   const { sma_20: s20, sma_50: s50, rsi_14: r14, macd: m, atr: a, bollinger_bands: bb, ichimoku: ichi } = tech;
   const { per, shinyo_bairitu, shinyo_bairitu_eval, eps_growth, eps_growth_eval, keijo_margin, keijo_margin_eval } = fund;
@@ -702,12 +702,16 @@ function generateBuyReasons(tech, fund, currentPrice) {
     reasons.push({ indicator: 'EPS 成長率', detail: `EPS 成長率 ${eps_growth.toFixed(1)}% と高成長。利益拡大トレンドが続いている推定。` });
   if (keijo_margin_eval === 'excellent' && keijo_margin !== null)
     reasons.push({ indicator: '経常利益率', detail: `経常利益率 ${keijo_margin.toFixed(1)}% と高い収益性。本業の競争力が強い。` });
+  if (chartPatterns?.golden_cross)
+    reasons.push({ indicator: 'ゴールデンクロス', detail: 'SMA20 が SMA50 を上抜け（直近10日以内）。中期上昇トレンドへの転換シグナル。' });
+  if (chartPatterns?.higher_highs && chartPatterns?.higher_lows)
+    reasons.push({ indicator: '高値・安値の切り上げ', detail: '直近5本の高値・安値が切り上がっており、上昇トレンドが継続中。' });
   return reasons;
 }
 
-function generateSellWarnings(tech, fund) {
+function generateSellWarnings(tech, fund, currentPrice = null, chartPatterns = null) {
   const warnings = [];
-  const { rsi_14: r14, bollinger_bands: bb, ichimoku: ichi } = tech;
+  const { rsi_14: r14, bollinger_bands: bb, ichimoku: ichi, macd: m, sma_20: s20, sma_50: s50 } = tech;
   const { shinyo_bairitu, shinyo_bairitu_eval, keijo_margin, keijo_margin_eval } = fund;
 
   if (r14 !== null && r14 > 70)
@@ -722,6 +726,14 @@ function generateSellWarnings(tech, fund) {
     warnings.push({ indicator: '信用倍率', detail: `信用倍率 ${shinyo_bairitu.toFixed(2)} 倍と低水準。信用売りが優勢で、株価の重石になる可能性あり。` });
   if (keijo_margin_eval === 'poor' && keijo_margin !== null)
     warnings.push({ indicator: '経常利益率', detail: `経常利益率 ${keijo_margin.toFixed(1)}% と低め。本業の収益力に課題があり、改善動向を注視。` });
+  if (m && m.histogram !== null && m.histogram < 0)
+    warnings.push({ indicator: 'MACD', detail: `MACD ヒストグラム ${m.histogram.toFixed(4)} でマイナス。下降モメンタムが継続中。` });
+  if (currentPrice && s20 && s50 && currentPrice < s20 && s20 < s50)
+    warnings.push({ indicator: 'SMA（20/50）', detail: `現在値（¥${Math.round(currentPrice).toLocaleString()}）< SMA20（¥${Math.round(s20).toLocaleString()}）< SMA50（¥${Math.round(s50).toLocaleString()}）で下降トレンド継続中。` });
+  if (chartPatterns?.dead_cross)
+    warnings.push({ indicator: 'デッドクロス', detail: 'SMA20 が SMA50 を下抜け（直近10日以内）。中期下降トレンドへの転換シグナル。' });
+  if (chartPatterns?.lower_highs && chartPatterns?.lower_lows)
+    warnings.push({ indicator: '高値・安値の切り下げ', detail: '直近5本の高値・安値が切り下がっており、下降トレンドが継続中。' });
   return warnings;
 }
 
@@ -734,49 +746,90 @@ function priceStep(price) {
 
 function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50Val, sma20Val, overallSignal = 'neutral') {
   try {
-    // 報酬目標: ATRベース（前向き）を優先し、52週高値は補助的に使う
-    const atrTarget = atrVal ? currentPrice + atrVal * 3 : null;
-    const candidates = [
-      atrTarget,
-      highPrice > currentPrice ? highPrice * 1.02 : null,
-    ].filter(v => v !== null && v > currentPrice);
-    if (candidates.length === 0) candidates.push(currentPrice * 1.05);
-    let rewardRaw = Math.max(...candidates);
     const step = priceStep(currentPrice);
-    let rewardTarget = Math.round(rewardRaw / step) * step;
-    if (rewardTarget <= currentPrice) rewardTarget = (Math.floor(rewardRaw / step) + 1) * step;
-    const rewardPct = +((rewardTarget - currentPrice) / currentPrice * 100).toFixed(2);
-
-    let stopLossRaw;
-    if (sma20Val !== null && atrVal !== null) stopLossRaw = Math.max(sma20Val - atrVal, lowPrice52w);
-    else stopLossRaw = lowPrice52w;
-    if (stopLossRaw >= currentPrice) stopLossRaw = currentPrice - (atrVal !== null ? atrVal * 2 : currentPrice * 0.03);
-    const stopLoss = Math.round(stopLossRaw / step) * step;
-    const riskPct = +((stopLoss - currentPrice) / currentPrice * 100).toFixed(2);
-    const ratio = riskPct !== 0 ? +Math.abs(rewardPct / riskPct).toFixed(2) : null;
-
-    const isBuy = overallSignal === 'buy' || overallSignal === 'strong_buy';
+    const isBuy  = overallSignal === 'buy'  || overallSignal === 'strong_buy';
     const isSell = overallSignal === 'sell' || overallSignal === 'strong_sell';
+
+    let rewardTarget, stopLoss, rewardPct, riskPct;
+
+    if (isSell) {
+      // ── 売りシグナル：下値目処（利確目安）とストップ（上値）を計算 ──
+      const atrDownTarget = atrVal ? currentPrice - atrVal * 2 : null;
+      const downCandidates = [
+        atrDownTarget,
+        lowPrice52w < currentPrice ? lowPrice52w : null,
+      ].filter(v => v !== null && v < currentPrice);
+      if (downCandidates.length === 0) downCandidates.push(currentPrice * 0.95);
+      let rewardRaw = Math.min(...downCandidates);
+      rewardTarget = Math.round(rewardRaw / step) * step;
+      if (rewardTarget >= currentPrice) rewardTarget = currentPrice - step;
+      rewardPct = +((rewardTarget - currentPrice) / currentPrice * 100).toFixed(2);
+
+      const rawStop = sma20Val !== null && atrVal !== null
+        ? Math.min(sma20Val + atrVal, highPrice)
+        : highPrice;
+      const stopRaw = rawStop <= currentPrice
+        ? currentPrice + (atrVal !== null ? atrVal : currentPrice * 0.03)
+        : rawStop;
+      stopLoss = Math.round(stopRaw / step) * step;
+      if (stopLoss <= currentPrice) stopLoss = currentPrice + step;
+      riskPct = +((stopLoss - currentPrice) / currentPrice * 100).toFixed(2);
+
+    } else {
+      // ── 買いシグナル or 中立：上値目処とストップ（下値）を計算 ──
+      // ATR×2（短期スイング向け・×3は高ボラ株で非現実的なため修正）
+      const atrTarget = atrVal ? currentPrice + atrVal * 2 : null;
+      const candidates = [
+        atrTarget,
+        highPrice > currentPrice ? highPrice * 1.02 : null,
+      ].filter(v => v !== null && v > currentPrice);
+      if (candidates.length === 0) candidates.push(currentPrice * 1.05);
+      let rewardRaw = Math.max(...candidates);
+      rewardTarget = Math.round(rewardRaw / step) * step;
+      if (rewardTarget <= currentPrice) rewardTarget = (Math.floor(rewardRaw / step) + 1) * step;
+      rewardPct = +((rewardTarget - currentPrice) / currentPrice * 100).toFixed(2);
+
+      const rawStop = sma20Val !== null && atrVal !== null
+        ? Math.max(sma20Val - atrVal, lowPrice52w)
+        : lowPrice52w;
+      let stopLossRaw = rawStop >= currentPrice
+        ? currentPrice - (atrVal !== null ? atrVal * 2 : currentPrice * 0.03)
+        : rawStop;
+      stopLoss = Math.round(stopLossRaw / step) * step;
+      // 丸め後も現在値以上になっていないかチェック
+      if (stopLoss >= currentPrice) stopLoss = currentPrice - step;
+      riskPct = +((stopLoss - currentPrice) / currentPrice * 100).toFixed(2);
+    }
+
+    const ratio = riskPct !== 0 ? +Math.abs(rewardPct / riskPct).toFixed(2) : null;
 
     let evaluation;
     if (ratio === null) {
       evaluation = 'リスク・リワード比率を計算できません';
-    } else if (ratio >= 2.0) {
-      if (isBuy)       evaluation = '優秀なリスク・リワード比で総合判定も買い。積極的なエントリーを検討できる水準。';
-      else if (isSell) evaluation = '優秀なリスク・リワード比だが、総合判定が売りシグナルのためエントリーは見送りを推奨。';
-      else             evaluation = '優秀なリスク・リワード比。エントリーを検討できる水準。';
-    } else if (ratio >= 1.5) {
-      if (isBuy)       evaluation = '良好なリスク・リワード比で総合判定も買い。エントリーを検討できる。';
-      else if (isSell) evaluation = '良好なリスク・リワード比だが、総合判定が売りシグナルのため様子見を推奨。';
-      else             evaluation = '良好なリスク・リワード比。リワードがリスクを上回っており、エントリーを検討できる。';
-    } else if (ratio >= 1.0) {
-      if (isBuy)       evaluation = '許容範囲のリスク・リワード比。総合判定は買いのため、損切りラインを明確にしてエントリーすること。';
-      else if (isSell) evaluation = 'リスク・リワード比が低く、総合判定も売りシグナル。エントリーは避けた方が無難。';
-      else             evaluation = '許容範囲のリスク・リワード比。ポジションサイズを抑えて慎重に判断を。';
+    } else if (isSell) {
+      // 売りシグナル用：保有中の売り・損切り視点で評価
+      if (ratio >= 2.0)      evaluation = '優秀なリスク・リワード比（売り視点）。保有中なら積極的な売り・損切りを検討できる水準。新規買いは見送りを推奨。';
+      else if (ratio >= 1.5) evaluation = '良好なリスク・リワード比（売り視点）。保有中なら売り検討の水準。新規買いは様子見を推奨。';
+      else if (ratio >= 1.0) evaluation = '許容範囲のリスク・リワード比（売り視点）。総合判定が売りのため、新規買いは避けた方が無難。';
+      else                   evaluation = 'リスクがリワードをやや上回る。売りシグナルのため新規買いは避けること。ポジション整理を優先。';
     } else {
-      if (isBuy)       evaluation = 'リスクがリワードをやや上回る水準。総合判定は買いのため、押し目でのエントリーやポジションサイズを抑えた参入を検討。損切りラインは厳守すること。';
-      else if (isSell) evaluation = 'リスクがリワードを上回る（要注意）。総合判定も売りシグナルのため、エントリーは避けた方が無難。';
-      else             evaluation = 'リスクがリワードを上回る（要注意）。より良い水準まで待つか、ポジションサイズを最小限に抑えること。';
+      if (ratio >= 2.0) {
+        evaluation = isBuy
+          ? '優秀なリスク・リワード比で総合判定も買い。積極的なエントリーを検討できる水準。'
+          : '優秀なリスク・リワード比。エントリーを検討できる水準。';
+      } else if (ratio >= 1.5) {
+        evaluation = isBuy
+          ? '良好なリスク・リワード比で総合判定も買い。エントリーを検討できる。'
+          : '良好なリスク・リワード比。リワードがリスクを上回っており、エントリーを検討できる。';
+      } else if (ratio >= 1.0) {
+        evaluation = isBuy
+          ? '許容範囲のリスク・リワード比。総合判定は買いのため、損切りラインを明確にしてエントリーすること。'
+          : '許容範囲のリスク・リワード比。ポジションサイズを抑えて慎重に判断を。';
+      } else {
+        evaluation = isBuy
+          ? 'リスクがリワードをやや上回る水準。総合判定は買いのため、押し目でのエントリーやポジションサイズを抑えた参入を検討。損切りラインは厳守すること。'
+          : 'リスクがリワードを上回る（要注意）。より良い水準まで待つか、ポジションサイズを最小限に抑えること。';
+      }
     }
 
     return { reward_target: rewardTarget, reward_percentage: rewardPct, stop_loss: stopLoss, risk_percentage: riskPct, risk_reward_ratio: ratio, evaluation };
@@ -1052,8 +1105,8 @@ app.get('/api/v2/report', async (req, res) => {
     const l52 = hist.length ? Math.min(...hist.map(p => p.low)) : curr;
 
     const overallSignal = base.overall_signal;
-    const buyReasons = generateBuyReasons(tech, fund, curr);
-    const sellWarnings = generateSellWarnings(tech, fund);
+    const buyReasons = generateBuyReasons(tech, fund, curr, base.chart_patterns);
+    const sellWarnings = generateSellWarnings(tech, fund, curr, base.chart_patterns);
     const riskReward = calculateRiskReward(curr, h52, l52, tech.atr?.atr ?? null, tech.sma_50, tech.sma_20, overallSignal);
 
     const isBuySignal = overallSignal === 'buy' || overallSignal === 'strong_buy';
