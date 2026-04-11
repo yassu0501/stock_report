@@ -389,7 +389,8 @@ function renderReport(data, isFromCache) {
   document.getElementById('t-macd-line').innerHTML = fmtNull(data.technical.macd.line, '', 4);
   document.getElementById('t-macd-signal').innerHTML = fmtNull(data.technical.macd.signal, '', 4);
   document.getElementById('t-macd-hist').innerHTML = fmtNull(data.technical.macd.histogram, '', 4);
-  document.getElementById('t-dev25').innerHTML = fmtNull(data.technical.ma_deviation_25, '%');
+  document.getElementById('t-dev20').innerHTML = fmtNull(data.technical.ma_deviation_20, '%');
+  document.getElementById('t-dev50').innerHTML = fmtNull(data.technical.ma_deviation_50, '%');
 
   const tSig = data.technical.signal;
   document.getElementById('t-signal-badge').innerHTML =

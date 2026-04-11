@@ -196,6 +196,8 @@ function analyzeTechnical(prices, high, low) {
     sma_50: sma50 !== null ? +sma50.toFixed(2) : null,
     rsi_14: rsi14 !== null ? +rsi14.toFixed(2) : null,
     macd: macdData, atr: atrData, bollinger_bands: bbData, ichimoku: ichiData,
+    ma_deviation_20: sma20 && current ? +((current - sma20) / sma20 * 100).toFixed(2) : null,
+    ma_deviation_50: sma50 && current ? +((current - sma50) / sma50 * 100).toFixed(2) : null,
     score: +score.toFixed(2), signal,
   };
 }
@@ -597,11 +599,14 @@ function generateTechnicalSummary(tech, currentPrice) {
       ? `MACD ヒストグラムがプラス（${h.toFixed(4)}）で上昇モメンタム継続中。`
       : `MACD ヒストグラムがマイナス（${h.toFixed(4)}）で下降圧力あり。`);
   }
-  if (tech.ma_deviation_25 != null) {
-    const dev25 = Number(tech.ma_deviation_25);
-    if (dev25 > 10) lines.push(`25日乖離率が +${dev25.toFixed(1)}% と高く、短期的な買われすぎ（過熱感）に注意。`);
-    else if (dev25 < -10) lines.push(`25日乖離率が ${dev25.toFixed(1)}% と低く、売られすぎ水準からの反発が期待できる。`);
-    else lines.push(`25日乖離率 ${dev25.toFixed(1)}% と適正範囲内。`);
+  if (tech.ma_deviation_20 != null) {
+    const dev20 = Number(tech.ma_deviation_20);
+    const dev50 = tech.ma_deviation_50 != null ? Number(tech.ma_deviation_50) : null;
+    const fmt = v => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+    const suffix = dev50 != null ? `、SMA50 乖離率 ${fmt(dev50)}` : '';
+    if (dev20 > 10)       lines.push(`SMA20 乖離率 +${dev20.toFixed(1)}%${suffix} と高く、短期的な買われすぎ（過熱感）に注意。`);
+    else if (dev20 < -10) lines.push(`SMA20 乖離率 ${dev20.toFixed(1)}%${suffix} と低く、売られすぎ水準からの反発が期待できる。`);
+    else                  lines.push(`SMA20 乖離率 ${fmt(dev20)}${suffix} と適正範囲内。`);
   }
   if (tech.beta != null) {
     const b = Number(tech.beta);
@@ -1068,7 +1073,7 @@ async function buildReport(code) {
 
   return {
     stock: { code, name, current_price: +currentPrice.toFixed(2), timestamp: new Date().toISOString() },
-    technical: { ...techDict, ma_deviation_25: fundDict.dev25 },
+    technical: techDict,
     fundamental: fundDict,
     overall_signal: overallSignal,
     confidence,
