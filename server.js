@@ -398,7 +398,6 @@ async function fetchKabutanFundamental(code) {
     if (totalOku > 0) marketCap = totalOku;
   }
   let epsGrowth = null, keijoMargin = null, salesGrowth = null;
-  let dev5 = null, dev25 = null, dev75 = null;
 
   const tableRows = [];
   $('table tr').each((_, tr) => {
@@ -421,16 +420,8 @@ async function fetchKabutanFundamental(code) {
     }
   }
 
-  const devIdx = tableRows.findIndex(r => r.includes('5日線') && r.includes('25日線'));
-  if (devIdx >= 0 && tableRows[devIdx + 1]) {
-    const row = tableRows[devIdx + 1];
-    dev5 = parseFloat(row[0]?.replace(/[^\d\.\-]/g, ''));
-    dev25 = parseFloat(row[1]?.replace(/[^\d\.\-]/g, ''));
-    dev75 = parseFloat(row[2]?.replace(/[^\d\.\-]/g, ''));
-  }
-
   const name = $('h1').first().text().trim() || code;
-  return { name, per, pbr, dividendYield, marketCap, shinyoBairitu, epsGrowth, keijoMargin, salesGrowth, dev5, dev25, dev75 };
+  return { name, per, pbr, dividendYield, marketCap, shinyoBairitu, epsGrowth, keijoMargin, salesGrowth };
 }
 
 async function getYahooCrumb() {
@@ -487,7 +478,7 @@ async function analyzeFundamental(code, priceHistory) {
   }
 
   // かぶたんからファンダメンタル取得
-  let pbr = null, shinyoBairitu = null, epsGrowth = null, keijoMargin = null, salesGrowth = null, dev25 = null, marketCap = null;
+  let pbr = null, shinyoBairitu = null, epsGrowth = null, keijoMargin = null, salesGrowth = null, marketCap = null;
   try {
     const kb = await fetchKabutanFundamental(code);
     if (kb.name && kb.name !== code) name = kb.name;
@@ -499,7 +490,6 @@ async function analyzeFundamental(code, priceHistory) {
     if (kb.epsGrowth != null && !isNaN(kb.epsGrowth)) epsGrowth = kb.epsGrowth;
     if (kb.keijoMargin != null && !isNaN(kb.keijoMargin)) keijoMargin = kb.keijoMargin;
     if (kb.salesGrowth != null && !isNaN(kb.salesGrowth)) salesGrowth = kb.salesGrowth;
-    if (kb.dev25 != null && !isNaN(kb.dev25)) dev25 = kb.dev25;
   } catch (e) {
     console.error(`Kabutan merge error [${code}]:`, e.message);
   }
@@ -565,7 +555,6 @@ async function analyzeFundamental(code, priceHistory) {
     dividend_yield: dividendYield,
     market_cap: marketCap,
     beta: beta !== null ? +beta.toFixed(2) : null,
-    dev25: dev25,
     ytd_performance: ytdPerformance,
     shinyo_bairitu: shinyoBairitu, shinyo_bairitu_eval: shinyoEval,
     eps_growth: epsGrowth, eps_growth_eval: epsGrowthEval,
