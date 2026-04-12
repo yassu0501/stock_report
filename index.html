@@ -103,20 +103,12 @@
             <span class="metric-value" id="t-dev20"></span>
           </div>
           <div class="metric-row">
-            <span class="metric-label">MACD ライン</span>
-            <span class="metric-value" id="t-macd-line"></span>
+            <span class="metric-label">MACD</span>
+            <span id="t-macd-badge"></span>
           </div>
           <div class="metric-row">
             <span class="metric-label">SMA50 乖離率</span>
             <span class="metric-value" id="t-dev50"></span>
-          </div>
-          <div class="metric-row">
-            <span class="metric-label">MACD シグナル</span>
-            <span class="metric-value" id="t-macd-signal"></span>
-          </div>
-          <div class="metric-row">
-            <span class="metric-label">MACD ヒスト</span>
-            <span class="metric-value" id="t-macd-hist"></span>
           </div>
         </div>
         <div class="metric-row">
@@ -193,13 +185,8 @@
     <div class="grid-2" style="margin-top:16px;">
       <div class="card" id="tech-detail-card">
         <div class="card-title">テクニカル詳細</div>
-        <div class="metric-row">
-          <span class="metric-label">ATR（ボラティリティ）</span>
-          <div class="metric-right">
-            <span class="metric-value" id="d-atr-val"></span>
-            <span id="d-atr-sig"></span>
-          </div>
-        </div>
+
+        <div class="metric-section-label">トレンド</div>
         <div class="metric-row">
           <span class="metric-label">BB 上限 / 中心 / 下限</span>
           <div class="metric-right">
@@ -215,10 +202,6 @@
           </div>
         </div>
         <div class="metric-row">
-          <span class="metric-label">チャートパターン</span>
-          <div class="metric-right" id="d-patterns"></div>
-        </div>
-        <div class="metric-row">
           <span class="metric-label">高値・安値トレンド</span>
           <div class="metric-right" id="d-trend"></div>
         </div>
@@ -227,6 +210,19 @@
           <div class="metric-right">
             <span class="metric-value" id="d-adx-val"></span>
             <span id="d-adx-sig"></span>
+          </div>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">チャートパターン</span>
+          <div class="metric-right" id="d-patterns"></div>
+        </div>
+
+        <div class="metric-section-label">モメンタム &amp; ボラティリティ</div>
+        <div class="metric-row">
+          <span class="metric-label">ATR（ボラティリティ）</span>
+          <div class="metric-right">
+            <span class="metric-value" id="d-atr-val"></span>
+            <span id="d-atr-sig"></span>
           </div>
         </div>
         <div class="metric-row">

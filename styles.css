@@ -263,6 +263,23 @@ main {
 }
 .metric-value.null-val { color: var(--muted); font-weight: 400; font-family: inherit; }
 
+/* ── Metric section label (カード内サブセクション区切り) ── */
+.metric-section-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.metric-section-label:first-child {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
 /* ── Score bar ── */
 .score-bar-wrap { margin-top: 20px; }
 .score-bar-label {

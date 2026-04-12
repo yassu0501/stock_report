@@ -386,9 +386,20 @@ function renderReport(data, isFromCache) {
   document.getElementById('t-sma20').innerHTML = fmtNull(data.technical.sma_20);
   document.getElementById('t-sma50').innerHTML = fmtNull(data.technical.sma_50);
   document.getElementById('t-rsi').innerHTML = fmtNull(data.technical.rsi_14);
-  document.getElementById('t-macd-line').innerHTML = fmtNull(data.technical.macd.line, '', 4);
-  document.getElementById('t-macd-signal').innerHTML = fmtNull(data.technical.macd.signal, '', 4);
-  document.getElementById('t-macd-hist').innerHTML = fmtNull(data.technical.macd.histogram, '', 4);
+  const macd = data.technical.macd;
+  if (macd && macd.line != null && macd.signal != null && macd.histogram != null) {
+    const bullish = macd.line > macd.signal;
+    const strong  = Math.abs(macd.histogram) > 0;
+    let cls, label;
+    if (bullish && strong && macd.histogram > 0)  { cls = 'buy';     label = '買いシグナル ▲'; }
+    else if (bullish)                              { cls = 'neutral'; label = '弱い買い ▲'; }
+    else if (!bullish && strong && macd.histogram < 0) { cls = 'sell'; label = '売りシグナル ▼'; }
+    else                                           { cls = 'neutral'; label = '弱い売り ▼'; }
+    document.getElementById('t-macd-badge').innerHTML =
+      `<span class="badge ${cls}">${label}</span>`;
+  } else {
+    document.getElementById('t-macd-badge').innerHTML = '<span class="metric-value">--</span>';
+  }
   document.getElementById('t-dev20').innerHTML = fmtNull(data.technical.ma_deviation_20, '%');
   document.getElementById('t-dev50').innerHTML = fmtNull(data.technical.ma_deviation_50, '%');
 
