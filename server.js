@@ -501,20 +501,40 @@ async function fetchKabutanFundamental(code) {
   const $ = cheerio.load(html);
 
   const allTexts = $('th, td, span, dt, dd').map((_, el) => $(el).text().trim()).get();
-  // 複数ラベルを含む複合ヘッダー（"PER・PBR" 等）を誤検知しないよう、
-  // 対象ラベル以外の指標ラベルを含む要素はスキップする
+  // ラベルが [PER, PBR, 利回り, 信用倍率] と連続して並び、
+  // 値が [12.1倍, 1.11倍, 2.86%, 4.23倍] と後続する構造に対応。
+  // 各ラベルを出現順に並べ、値もその順番で対応付ける。
   const INDICATOR_LABELS = ['PER', 'PBR', '利回り', '信用倍率'];
-  const findVal = (label, limit = 10) => {
+  const labelPositions = INDICATOR_LABELS.map(label => {
     const others = INDICATOR_LABELS.filter(l => l !== label);
     const idx = allTexts.findIndex(t =>
       t.includes(label) && !others.some(l => t.includes(l))
     );
-    if (idx < 0) return null;
-    for (let i = idx + 1; i < Math.min(idx + limit, allTexts.length); i++) {
-      const v = parseFloat(allTexts[i].replace(/,/g, '').replace(/％|%/g, ''));
-      if (!isNaN(v)) return v;
-    }
-    return null;
+    return { label, idx };
+  }).filter(({ idx }) => idx >= 0).sort((a, b) => a.idx - b.idx);
+
+  // 最後のラベル以降から値スロットを収集する。
+  // かぶたんのHTML構造は "12.1倍", "倍", "1.11倍", "倍", ... のように
+  // 値テキストと単位テキストが別要素で交互に現れるため、
+  // 単位のみの要素（"倍","％","%"）と空文字はスキップし、
+  // それ以外を1スロットとして収集（値が"—"等の場合は null で保持）。
+  // これにより値が欠落した場合も後続ラベルとの対応がずれない。
+  const UNIT_RE = /^[倍％%×]$/;
+  const lastLabelIdx = labelPositions.length > 0
+    ? labelPositions[labelPositions.length - 1].idx
+    : -1;
+  const slots = [];
+  for (let i = lastLabelIdx + 1; i < allTexts.length && slots.length < labelPositions.length; i++) {
+    const t = allTexts[i];
+    if (t === '' || UNIT_RE.test(t)) continue;
+    const v = parseFloat(t.replace(/,/g, '').replace(/％|%/g, ''));
+    slots.push(!isNaN(v) ? v : null);
+  }
+
+  const findVal = (label) => {
+    const pos = labelPositions.findIndex(l => l.label === label);
+    if (pos < 0 || pos >= slots.length) return null;
+    return slots[pos];
   };
 
   const per = findVal('PER');
@@ -840,7 +860,7 @@ function generateBuyReasons(tech, fund, currentPrice, chartPatterns = null) {
   if (tech.rsi_divergence?.bullish)
     reasons.push({ indicator: 'RSI 強気ダイバージェンス', detail: '価格が安値を更新する中、RSI の安値が切り上がっており底打ちシグナルを示唆。反発の可能性がある。' });
   if (tech.adx?.signal === 'bullish_trend')
-    reasons.push({ indicator: 'ADX（トレンド強度）', detail: `ADX ${tech.adx.adx.toFixed(1)} で強い上昇トレンドを確認（+DI ${tech.adx.plus_di} > -DI ${tech.adx.minus_di}）。トレンドの継続性が高い。` });
+    reasons.push({ indicator: 'ADX（トレンド強度）', detail: `ADX ${tech.adx.adx?.toFixed(1) ?? '—'} で強い上昇トレンドを確認（+DI ${tech.adx.plus_di} > -DI ${tech.adx.minus_di}）。トレンドの継続性が高い。` });
   return reasons;
 }
 
@@ -872,7 +892,7 @@ function generateSellWarnings(tech, fund, currentPrice = null, chartPatterns = n
   if (tech.rsi_divergence?.bearish)
     warnings.push({ indicator: 'RSI 弱気ダイバージェンス', detail: '価格が高値を更新する中、RSI の高値が切り下がっており天井シグナルを示唆。調整に注意。' });
   if (tech.adx?.signal === 'bearish_trend')
-    warnings.push({ indicator: 'ADX（トレンド強度）', detail: `ADX ${tech.adx.adx.toFixed(1)} で強い下降トレンドを確認（-DI ${tech.adx.minus_di} > +DI ${tech.adx.plus_di}）。下落圧力が持続している可能性がある。` });
+    warnings.push({ indicator: 'ADX（トレンド強度）', detail: `ADX ${tech.adx.adx?.toFixed(1) ?? '—'} で強い下降トレンドを確認（-DI ${tech.adx.minus_di} > +DI ${tech.adx.plus_di}）。下落圧力が持続している可能性がある。` });
   return warnings;
 }
 

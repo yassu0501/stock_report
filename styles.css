@@ -141,6 +141,7 @@ main {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+  align-items: start;
 }
 @media (max-width: 700px) {
   .grid-2 { grid-template-columns: 1fr; }
@@ -217,7 +218,7 @@ main {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 8px;
+  padding: 8px 8px;
   margin: 0 -8px;
   border-bottom: 1px solid rgba(255,255,255,0.05);
   font-size: 0.88rem;
@@ -228,6 +229,22 @@ main {
   background: rgba(255,255,255,0.03);
 }
 .metric-row:last-child { border-bottom: none; }
+
+/* 2カラム指標レイアウト（カード内で指標を横並び2列に） */
+.metric-table {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 8px;
+  margin: 0 -8px;
+}
+.metric-table .metric-row {
+  margin: 0;
+  padding: 7px 8px;
+}
+.metric-table .metric-row:last-child,
+.metric-table .metric-row:nth-last-child(2):nth-child(odd) {
+  border-bottom: none;
+}
 .metric-label { 
   color: var(--muted); 
   font-weight: 500;
