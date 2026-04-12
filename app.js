@@ -484,6 +484,25 @@ function renderReport(data, isFromCache) {
       trendBadges.length ? trendBadges.join(' ') : '<span class="null-val">なし</span>';
   }
 
+  // B-8: ADX（トレンド強度）
+  const adx = data.technical.adx;
+  const ADX_BADGE = { no_trend: 'neutral', weak_trend: 'neutral', bullish_trend: 'buy', bearish_trend: 'sell' };
+  const ADX_LABEL = { no_trend: 'トレンドなし', weak_trend: '弱トレンド', bullish_trend: '上昇トレンド', bearish_trend: '下降トレンド' };
+  document.getElementById('d-adx-val').innerHTML = adx?.adx != null
+    ? `${adx.adx.toFixed(1)} (+DI ${adx.plus_di != null ? Number(adx.plus_di).toFixed(1) : '—'} / -DI ${adx.minus_di != null ? Number(adx.minus_di).toFixed(1) : '—'})`
+    : '<span class="null-val">N/A</span>';
+  document.getElementById('d-adx-sig').innerHTML = adx
+    ? `<span class="badge ${ADX_BADGE[adx.signal] || 'neutral'}">${ADX_LABEL[adx.signal] || '不明'}</span>`
+    : '';
+
+  // B-6: RSI ダイバージェンス
+  const rsid = data.technical.rsi_divergence;
+  const divBadges = [];
+  if (rsid?.bullish) divBadges.push('<span class="badge buy">強気ダイバージェンス（底打ち）</span>');
+  if (rsid?.bearish) divBadges.push('<span class="badge sell">弱気ダイバージェンス（天井）</span>');
+  document.getElementById('d-rsi-div').innerHTML =
+    divBadges.length ? divBadges.join(' ') : '<span class="null-val">なし</span>';
+
   // B-2: 出来高異常検知バナー
   const va = data.volume_anomaly;
   const banner = document.getElementById('volume-anomaly-banner');

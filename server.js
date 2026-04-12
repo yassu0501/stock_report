@@ -106,6 +106,48 @@ function atr(high, low, close, period = 14) {
   return { atr: +atrVal.toFixed(4), atr_avg: +atrAvg.toFixed(4), signal };
 }
 
+// ─── B-8: ADX（平均方向性指数） ───
+
+function calcADX(highs, lows, closes, period = 14) {
+  const empty = { adx: null, plus_di: null, minus_di: null, signal: 'no_trend' };
+  if (closes.length < period * 2 + 1) return empty;
+  const n = closes.length;
+  const plusDMs = [], minusDMs = [], trs = [];
+  for (let i = 1; i < n; i++) {
+    const upMove   = highs[i] - highs[i - 1];
+    const downMove = lows[i - 1] - lows[i];
+    plusDMs.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDMs.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    trs.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])));
+  }
+  // Wilder's smoothing（初期値は単純平均）
+  let smTR  = trs.slice(0, period).reduce((a, b) => a + b, 0);
+  let smPDM = plusDMs.slice(0, period).reduce((a, b) => a + b, 0);
+  let smMDM = minusDMs.slice(0, period).reduce((a, b) => a + b, 0);
+  const dxArr = [];
+  for (let i = period; i < trs.length; i++) {
+    smTR  = smTR  - smTR  / period + trs[i];
+    smPDM = smPDM - smPDM / period + plusDMs[i];
+    smMDM = smMDM - smMDM / period + minusDMs[i];
+    // smTR/diSum がゼロの場合は dx=0 を push して時系列の連続性を維持する（continue するとインデックスずれが生じる）
+    if (smTR < 1e-10) { dxArr.push({ dx: 0, pDI: 0, mDI: 0 }); continue; }
+    const pDI = 100 * smPDM / smTR;
+    const mDI = 100 * smMDM / smTR;
+    const diSum = pDI + mDI;
+    if (diSum < 1e-10) { dxArr.push({ dx: 0, pDI, mDI }); continue; }
+    dxArr.push({ dx: 100 * Math.abs(pDI - mDI) / diSum, pDI, mDI });
+  }
+  if (dxArr.length < period) return empty;
+  let adx = dxArr.slice(0, period).reduce((a, d) => a + d.dx, 0) / period;
+  for (let i = period; i < dxArr.length; i++) adx = (adx * (period - 1) + dxArr[i].dx) / period;
+  const last    = dxArr[dxArr.length - 1];
+  const plusDI  = +last.pDI.toFixed(2);
+  const minusDI = +last.mDI.toFixed(2);
+  adx = +adx.toFixed(2);
+  const signal = adx < 20 ? 'no_trend' : adx < 25 ? 'weak_trend' : plusDI > minusDI ? 'bullish_trend' : 'bearish_trend';
+  return { adx, plus_di: plusDI, minus_di: minusDI, signal };
+}
+
 function bollingerBands(prices, period = 20, stdDev = 2) {
   if (prices.length < period) return { upper: null, middle: null, lower: null, width: null, signal: 'neutral' };
   const recent = prices.slice(-period);
@@ -147,6 +189,9 @@ function analyzeTechnical(prices, high, low) {
   const atrData = atr(high, low, prices, 14);
   const bbData = bollingerBands(prices, 20, 2);
   const ichiData = ichimoku(high, low, prices);
+  const adxData = calcADX(high, low, prices);
+  const rsiArr = rsiHistory(prices);
+  const rsiDiv = detectRsiDivergence(prices, rsiArr);
 
   let points = 0;
   let activeMax = 0;  // 有効指標ごとの最大ポイント合計（null除外した動的正規化用）
@@ -196,6 +241,7 @@ function analyzeTechnical(prices, high, low) {
     sma_50: sma50 !== null ? +sma50.toFixed(2) : null,
     rsi_14: rsi14 !== null ? +rsi14.toFixed(2) : null,
     macd: macdData, atr: atrData, bollinger_bands: bbData, ichimoku: ichiData,
+    adx: adxData, rsi_divergence: rsiDiv,
     ma_deviation_20: sma20 && current ? +((current - sma20) / sma20 * 100).toFixed(2) : null,
     ma_deviation_50: sma50 && current ? +((current - sma50) / sma50 * 100).toFixed(2) : null,
     score: +score.toFixed(2), signal,
@@ -231,6 +277,31 @@ function rsiHistory(prices, period = 14) {
     result.push(avgLoss === 0 ? 100 : +(100 - 100 / (1 + avgGain / avgLoss)).toFixed(2));
   }
   return result;
+}
+
+// ─── B-6: RSI ダイバージェンス検出 ───
+
+function detectRsiDivergence(prices, rsiArr, lookback = 40) {
+  if (prices.length < lookback || rsiArr.length < lookback) return { bullish: false, bearish: false };
+  const n    = prices.length;
+  const half = Math.floor(lookback / 2);
+  // 前半ウィンドウ（古い側）と後半ウィンドウ（直近）に分割して比較
+  const p1 = prices.slice(n - lookback, n - half);
+  const p2 = prices.slice(n - half);
+  const r1 = rsiArr.slice(n - lookback, n - half).filter(v => v !== null);
+  const r2 = rsiArr.slice(n - half).filter(v => v !== null);
+  if (r1.length < 3 || r2.length < 3) return { bullish: false, bearish: false };
+  // 注: null フィルタ後の r1/r2 と p1/p2 のインデックスは1対1対応しない。
+  // ウィンドウ内の価格極値と RSI 極値をそれぞれ比較する簡略実装（ピーク時点の厳密な対応は行わない）。
+  const pH1 = Math.max(...p1), pH2 = Math.max(...p2);
+  const pL1 = Math.min(...p1), pL2 = Math.min(...p2);
+  const rH1 = Math.max(...r1), rH2 = Math.max(...r2);
+  const rL1 = Math.min(...r1), rL2 = Math.min(...r2);
+  // 弱気ダイバージェンス: 価格高値更新（≥1%）かつ RSI 高値切り下げ（≥3pt）
+  const bearish = (pH2 - pH1) / pH1 * 100 >= 1.0 && (rH1 - rH2) >= 3.0;
+  // 強気ダイバージェンス: 価格安値更新（≥1%）かつ RSI 安値切り上げ（≥3pt）
+  const bullish = (pL1 - pL2) / pL1 * 100 >= 1.0 && (rL2 - rL1) >= 3.0;
+  return { bullish, bearish };
 }
 
 function macdHistory(prices) {
@@ -430,8 +501,14 @@ async function fetchKabutanFundamental(code) {
   const $ = cheerio.load(html);
 
   const allTexts = $('th, td, span, dt, dd').map((_, el) => $(el).text().trim()).get();
+  // 複数ラベルを含む複合ヘッダー（"PER・PBR" 等）を誤検知しないよう、
+  // 対象ラベル以外の指標ラベルを含む要素はスキップする
+  const INDICATOR_LABELS = ['PER', 'PBR', '利回り', '信用倍率'];
   const findVal = (label, limit = 10) => {
-    const idx = allTexts.findIndex(t => t.includes(label));
+    const others = INDICATOR_LABELS.filter(l => l !== label);
+    const idx = allTexts.findIndex(t =>
+      t.includes(label) && !others.some(l => t.includes(l))
+    );
     if (idx < 0) return null;
     for (let i = idx + 1; i < Math.min(idx + limit, allTexts.length); i++) {
       const v = parseFloat(allTexts[i].replace(/,/g, '').replace(/％|%/g, ''));
@@ -760,6 +837,10 @@ function generateBuyReasons(tech, fund, currentPrice, chartPatterns = null) {
     reasons.push({ indicator: 'ゴールデンクロス', detail: 'SMA20 が SMA50 を上抜け（直近10日以内）。中期上昇トレンドへの転換シグナル。' });
   if (chartPatterns?.higher_highs && chartPatterns?.higher_lows)
     reasons.push({ indicator: '高値・安値の切り上げ', detail: '直近5本の高値・安値が切り上がっており、上昇トレンドが継続中。' });
+  if (tech.rsi_divergence?.bullish)
+    reasons.push({ indicator: 'RSI 強気ダイバージェンス', detail: '価格が安値を更新する中、RSI の安値が切り上がっており底打ちシグナルを示唆。反発の可能性がある。' });
+  if (tech.adx?.signal === 'bullish_trend')
+    reasons.push({ indicator: 'ADX（トレンド強度）', detail: `ADX ${tech.adx.adx.toFixed(1)} で強い上昇トレンドを確認（+DI ${tech.adx.plus_di} > -DI ${tech.adx.minus_di}）。トレンドの継続性が高い。` });
   return reasons;
 }
 
@@ -788,6 +869,10 @@ function generateSellWarnings(tech, fund, currentPrice = null, chartPatterns = n
     warnings.push({ indicator: 'デッドクロス', detail: 'SMA20 が SMA50 を下抜け（直近10日以内）。中期下降トレンドへの転換シグナル。' });
   if (chartPatterns?.lower_highs && chartPatterns?.lower_lows)
     warnings.push({ indicator: '高値・安値の切り下げ', detail: '直近5本の高値・安値が切り下がっており、下降トレンドが継続中。' });
+  if (tech.rsi_divergence?.bearish)
+    warnings.push({ indicator: 'RSI 弱気ダイバージェンス', detail: '価格が高値を更新する中、RSI の高値が切り下がっており天井シグナルを示唆。調整に注意。' });
+  if (tech.adx?.signal === 'bearish_trend')
+    warnings.push({ indicator: 'ADX（トレンド強度）', detail: `ADX ${tech.adx.adx.toFixed(1)} で強い下降トレンドを確認（-DI ${tech.adx.minus_di} > +DI ${tech.adx.plus_di}）。下落圧力が持続している可能性がある。` });
   return warnings;
 }
 
