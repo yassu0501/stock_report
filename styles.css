@@ -1,19 +1,22 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --buy:     #639922;
-  --sell:    #993C1D;
-  --neutral: #999999;
-  --bg:      #0f1117;
-  --surface: #1a1d27;
-  --border:  #2a2d3a;
-  --text:    #e8eaf0;
-  --muted:   #8b8fa8;
-  --radius:  12px;
+  --buy:           #639922;
+  --sell:          #993C1D;
+  --neutral:       #999999;
+  --bg:            #0f1117;
+  --surface:       #1a1d27;
+  --border:        #2a2d3a;
+  --text:          #e8eaf0;
+  --muted:         #8b8fa8;
+  --text-muted:    #8b8fa8;
+  --text-secondary:#aaaaaa;
+  --radius:        12px;
+  --focus-ring:    #5b9cf6;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -78,6 +81,12 @@ button {
 }
 button:hover { opacity: 0.85; }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
+button:focus-visible,
+.input-group input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.btn-secondary { background: #444; }
 
 /* ── Main layout ── */
 main {
@@ -134,6 +143,9 @@ main {
   letter-spacing: 0.8px;
   color: var(--muted);
   margin-bottom: 14px;
+  padding-left: 10px;
+  border-left: 2px solid var(--focus-ring);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
 /* ── Grid ── */
@@ -210,7 +222,13 @@ main {
 }
 .stock-name { font-size: 1.1rem; font-weight: 600; }
 .stock-code { font-size: 0.82rem; color: var(--muted); }
-.stock-price { font-size: 1.6rem; font-weight: 700; margin-left: auto; }
+.stock-price {
+  font-size: 1.9rem;
+  font-weight: 700;
+  margin-left: auto;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  letter-spacing: -1px;
+}
 .stock-ts { font-size: 0.75rem; color: var(--muted); }
 
 /* ── Metrics ── */
@@ -255,10 +273,10 @@ main {
   align-items: center;
   gap: 12px;
 }
-.metric-value { 
-  font-weight: 700; 
+.metric-value {
+  font-weight: 700;
   color: #fff;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.9rem;
 }
 .metric-value.null-val { color: var(--muted); font-weight: 400; font-family: inherit; }
@@ -296,14 +314,32 @@ main {
   height: 8px;
   background: var(--border);
   border-radius: 4px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+  position: relative;
+}
+.score-bar-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0%,
+    transparent calc(10% - 1px),
+    rgba(15,17,23,0.65) calc(10% - 1px),
+    rgba(15,17,23,0.65) 10%
+  );
+  pointer-events: none;
+  z-index: 2;
 }
 .score-bar-fill {
   height: 100%;
   border-radius: 4px;
   transition: width 0.8s cubic-bezier(0.165, 0.84, 0.44, 1);
   box-shadow: 0 0 12px rgba(0,0,0,0.3);
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Signal badge ── */
@@ -311,7 +347,7 @@ main {
   display: inline-block;
   padding: 4px 12px;
   border-radius: 6px;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -370,6 +406,20 @@ main {
 }
 .reason-item.buy  .reason-indicator { background: rgba(99,153,34,0.2);  color: var(--buy); }
 .reason-item.sell .reason-indicator { background: rgba(153,60,29,0.2);  color: var(--sell); }
+.reason-item.buy {
+  border-left: 3px solid rgba(99,153,34,0.65);
+  background: rgba(99,153,34,0.04);
+  padding-left: 12px;
+  margin-left: -12px;
+  border-radius: 0 4px 4px 0;
+}
+.reason-item.sell {
+  border-left: 3px solid rgba(153,60,29,0.65);
+  background: rgba(153,60,29,0.04);
+  padding-left: 12px;
+  margin-left: -12px;
+  border-radius: 0 4px 4px 0;
+}
 .reason-detail {
   display: block;
   font-size: 0.83rem;
@@ -385,9 +435,46 @@ main {
   margin-bottom: 16px;
 }
 @media (max-width: 700px) { .rr-grid { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  .chart-wrap { height: 380px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .score-bar-fill,
+  .confidence-bar-fill {
+    transition: none;
+  }
+  .spinner {
+    animation: none;
+  }
+}
+/* ── Section divider ── */
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 28px 0 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.8px;
+  color: var(--muted);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+}
+.section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
 .rr-item { text-align: center; }
 .rr-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 6px; }
-.rr-value { font-size: 1.4rem; font-weight: 700; }
+.rr-value { font-size: 1.4rem; font-weight: 700; font-family: 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: -0.5px; }
 .rr-value.buy  { color: var(--buy); }
 .rr-value.sell { color: var(--sell); }
 .rr-sub { font-size: 0.82rem; color: var(--muted); margin-top: 2px; }
@@ -469,6 +556,7 @@ main {
   margin: 0;
   text-transform: uppercase;
   line-height: 1.1;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
 }
 .overall-signal-text.buy    { color: var(--buy); }
 .overall-signal-text.sell   { color: var(--sell); }
@@ -491,23 +579,45 @@ main {
   margin-bottom: 6px;
 }
 .confidence-value {
-  font-size: 1.8rem;
+  font-size: 2.6rem;
   font-weight: 800;
   margin-bottom: 12px;
   color: var(--text);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  letter-spacing: -2px;
+  line-height: 1;
 }
 .confidence-bar-track {
   width: 100%;
   height: 6px;
   background: var(--border);
   border-radius: 4px;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+}
+.confidence-bar-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0%,
+    transparent calc(10% - 1px),
+    rgba(15,17,23,0.65) calc(10% - 1px),
+    rgba(15,17,23,0.65) 10%
+  );
+  pointer-events: none;
+  z-index: 2;
 }
 .confidence-bar-fill {
   height: 100%;
   background: var(--buy);
   width: 0%;
   transition: width 1s cubic-bezier(0.165, 0.84, 0.44, 1);
+  position: relative;
+  z-index: 1;
+  border-radius: 4px;
 }
 
 @media (max-width: 600px) {
