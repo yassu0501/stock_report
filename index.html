@@ -23,7 +23,7 @@
     <button id="refresh-btn" class="btn-secondary" onclick="refreshReport()">更新</button>
   </div>
   <div class="header-notice">
-    <span class="notice-source">データソース: Yahoo Finance（yfinance 経由）／ 価格は最大 15〜20 分の遅延あり</span>
+    <span class="notice-source">データソース: かぶたん（株価履歴）・Yahoo Finance（ファンダメンタル）／ 価格は最大 15〜20 分の遅延あり</span>
     <span class="notice-sep">｜</span>
     <span class="notice-disclaimer">本ツールは情報提供のみを目的としており、投資助言ではありません</span>
   </div>
@@ -218,7 +218,7 @@
     </div>
 
     <!-- テクニカル詳細カード & ファンダメンタル詳細カード -->
-    <div class="grid-2" style="margin-top:16px;">
+    <div class="grid-2" style="margin-top:16px; align-items:stretch;">
       <div class="card" id="tech-detail-card">
         <div class="card-title">テクニカル詳細</div>
 
@@ -269,6 +269,8 @@
 
       <div class="card" id="fund-detail-card">
         <div class="card-title">ファンダメンタル詳細</div>
+
+        <div class="metric-section-label">バリュエーション</div>
         <div class="metric-row">
           <span class="metric-label">PBR</span>
           <div class="metric-right">
@@ -276,6 +278,8 @@
             <span id="d-pbr-eval"></span>
           </div>
         </div>
+
+        <div class="metric-section-label">成長性</div>
         <div class="metric-row">
           <span class="metric-label">売上高成長率</span>
           <div class="metric-right">
@@ -283,6 +287,8 @@
             <span id="d-sales-eval"></span>
           </div>
         </div>
+
+        <div class="metric-section-label">流動性・市場</div>
         <div class="metric-row">
           <span class="metric-label">平均出来高（20日）</span>
           <div class="metric-right">
@@ -467,11 +473,11 @@
       投資判断はご自身の責任において行ってください。市場データには遅延が含まれる場合があり、その正確性・完全性を保証するものではありません。
     </div>
     <div class="footer-meta">
-      <span>データソース: <a href="https://finance.yahoo.com" target="_blank" rel="noopener noreferrer">Yahoo Finance</a>（yfinance 経由、最大 15〜20 分遅延）</span>
+      <span>株価履歴: <a href="https://kabutan.jp" target="_blank" rel="noopener noreferrer">かぶたん</a></span>
       <span class="footer-sep">｜</span>
-      <span>対象: yfinance サポート銘柄（日本株は銘柄コード + .T）</span>
+      <span>ファンダメンタル: <a href="https://finance.yahoo.com" target="_blank" rel="noopener noreferrer">Yahoo Finance</a>（最大 15〜20 分遅延）</span>
       <span class="footer-sep">｜</span>
-      <span>本ツールは Yahoo Finance の利用規約に従って使用しています</span>
+      <span>本ツールは各サービスの利用規約に従って使用しています</span>
     </div>
   </div>
 </footer>
