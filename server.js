@@ -1075,6 +1075,7 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
     stopMult    = 1,          // ATR倍率（ストップ幅）
     useHigh52w  = true,       // 52週高値を目標候補に含めるか（短期はfalse）
     useLow52w   = true,       // 52週安値をストップ候補に含めるか
+    high52wMult = 1.02,       // 52週高値への上乗せ倍率（中期=1.02、長期=1.05）
   } = opts;
   try {
     const step = priceStep(currentPrice);
@@ -1111,7 +1112,7 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
       const atrTarget = atrVal ? currentPrice + atrVal * targetMult : null;
       const candidates = [
         atrTarget,
-        useHigh52w && highPrice > currentPrice ? highPrice * 1.02 : null,
+        useHigh52w && highPrice > currentPrice ? highPrice * high52wMult : null,
       ].filter(v => v !== null && v > currentPrice);
       if (candidates.length === 0) candidates.push(currentPrice * (1 + targetMult * 0.025));
       let rewardRaw = Math.max(...candidates);
@@ -1441,7 +1442,7 @@ app.get('/api/v2/report', async (req, res) => {
     const sma50   = tech.sma_50;
     const rrShort  = calculateRiskReward(curr, h52, l52, atrVal, sma50, sma20, base.scores.short_term.signal,  { targetMult: 1,   stopSmaVal: sma20, stopMult: 0.5, useHigh52w: false, useLow52w: false });
     const rrMedium = calculateRiskReward(curr, h52, l52, atrVal, sma50, sma20, base.scores.medium_term.signal, { targetMult: 2,   stopSmaVal: sma20, stopMult: 1   });
-    const rrLong   = calculateRiskReward(curr, h52, l52, atrVal, sma50, sma20, base.scores.long_term.signal,   { targetMult: 3,   stopSmaVal: sma50, stopMult: 1.5 });
+    const rrLong   = calculateRiskReward(curr, h52, l52, atrVal, sma50, sma20, base.scores.long_term.signal,   { targetMult: 3,   stopSmaVal: sma50, stopMult: 1.5, high52wMult: 1.05 });
     const riskReward = rrMedium; // 後方互換
 
     const isBuySignal = overallSignal === 'buy' || overallSignal === 'strong_buy';
