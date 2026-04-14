@@ -896,6 +896,171 @@ function generateSellWarnings(tech, fund, currentPrice = null, chartPatterns = n
   return warnings;
 }
 
+// ─── Multi-horizon Scoring ───
+
+function toSignal(score) {
+  return score >= 75 ? 'strong_buy' : score >= 60 ? 'buy' : score < 25 ? 'strong_sell' : score <= 40 ? 'sell' : 'neutral';
+}
+
+function calcShortTermScore(techDict, fundDict, volumeAnomaly, currentPrice = null) {
+  // 短期（数日〜1週間）: テクニカル90% + ファンダ10%
+  // RSI・MACDヒストグラム・BB を重視。SMA/一目は使わない
+  let points = 0, activeMax = 0;
+
+  const rsi = techDict.rsi_14;
+  if (rsi != null) {  // null と undefined を両方除外
+    activeMax += 3;
+    if      (rsi < 30) points += 3;
+    else if (rsi < 40) points += 1.5;
+    else if (rsi > 70) points -= 3;
+    else if (rsi > 60) points -= 1;
+  }
+
+  const macd = techDict.macd;
+  // 現在株価で正規化（sma_20が null の場合の誤差を防ぐ）
+  const ref = currentPrice || techDict.sma_20 || 1;
+  if (macd?.histogram !== null && macd?.histogram !== undefined) {
+    activeMax += 3;
+    const relH = macd.histogram / ref;
+    if      (relH >  0.001) points += 3;
+    else if (relH >  0)     points += 1.5;
+    else if (relH > -0.001) points -= 1.5;
+    else                    points -= 3;
+  }
+
+  const bb = techDict.bollinger_bands;
+  if (bb?.upper !== null && bb?.upper !== undefined) {
+    activeMax += 2;
+    if      (bb.signal === 'oversold')   points += 2;
+    else if (bb.signal === 'overbought') points -= 2;
+  }
+
+  const atr = techDict.atr;
+  if (atr?.signal) {
+    activeMax += 1;
+    if      (atr.signal === 'low_volatility')  points += 0.5;
+    else if (atr.signal === 'high_volatility') points -= 0.5;
+  }
+
+  const normBase  = activeMax === 0 ? 9  : activeMax;
+  const normRange = activeMax === 0 ? 18 : activeMax * 2;
+  const techScore = Math.max(0, Math.min(100, (points + normBase) / normRange * 100));
+  const fundScore = fundDict.score ?? 50;
+
+  let score = techScore * 0.9 + fundScore * 0.1;
+
+  // 出来高急増を短期シグナルに反映（±4pt）
+  if (volumeAnomaly?.anomaly) {
+    const sig = techDict.signal;
+    if (sig === 'buy'  || sig === 'strong_buy')  score = Math.min(100, score + 4);
+    if (sig === 'sell' || sig === 'strong_sell') score = Math.max(0,   score - 4);
+  }
+
+  return +score.toFixed(2);
+}
+
+function calcMediumTermScore(techDict, fundDict, chartPatterns = {}, volumeAnomaly) {
+  // 中期（数週間〜2ヶ月）: 現行ロジックを関数化
+  let score = techDict.score * 0.6 + fundDict.score * 0.4;
+
+  const sma20 = techDict.sma_20, sma50 = techDict.sma_50;
+  if (chartPatterns.golden_cross && sma20 !== null && sma50 !== null && sma20 > sma50)
+    score = Math.min(100, score + 5);
+  if (chartPatterns.dead_cross && sma20 !== null && sma50 !== null && sma20 < sma50)
+    score = Math.max(0, score - 5);
+  if (chartPatterns.higher_highs && chartPatterns.higher_lows) score = Math.min(100, score + 3);
+  if (chartPatterns.lower_highs  && chartPatterns.lower_lows)  score = Math.max(0,   score - 3);
+
+  if (volumeAnomaly?.anomaly) {
+    const sig = techDict.signal;
+    if (sig === 'buy'  || sig === 'strong_buy')  score = Math.min(100, score + 3);
+    if (sig === 'sell' || sig === 'strong_sell') score = Math.max(0,   score - 3);
+  }
+
+  return +score.toFixed(2);
+}
+
+function calcLongTermScore(techDict, fundDict) {
+  // 長期（数ヶ月〜1年）: テクニカル30% + ファンダ70%
+  // 一目雲・ADX・SMA配置 を重視。RSI/MACD/BB は使わない
+
+  // ── 長期テクニカルスコア ──
+  let tPoints = 0, tMax = 0;
+
+  const ichi = techDict.ichimoku;
+  if (ichi?.cloud_top !== null && ichi?.cloud_top !== undefined) {
+    tMax += 4;
+    if      (ichi.signal === 'bullish') tPoints += 4;
+    else if (ichi.signal === 'bearish') tPoints -= 4;
+  }
+
+  const adx = techDict.adx;
+  if (adx?.adx !== null && adx?.adx !== undefined) {
+    tMax += 3;
+    if      (adx.signal === 'bullish_trend') tPoints += 3;
+    else if (adx.signal === 'bearish_trend') tPoints -= 3;
+    // weak_trend / no_trend = 0
+  }
+
+  const sma20 = techDict.sma_20, sma50 = techDict.sma_50;
+  if (sma20 !== null && sma50 !== null) {
+    tMax += 2;
+    if      (sma20 > sma50) tPoints += 2;
+    else if (sma20 < sma50) tPoints -= 2;
+  }
+
+  const tNormBase  = tMax === 0 ? 9  : tMax;
+  const tNormRange = tMax === 0 ? 18 : tMax * 2;
+  const longTechScore = Math.max(0, Math.min(100, (tPoints + tNormBase) / tNormRange * 100));
+
+  // ── 長期ファンダスコア（PER・配当・EPS・経常利益率を個別重み） ──
+  let fPoints = 0, fMax = 0;
+
+  const per = fundDict.per;
+  if (per !== null && per !== undefined) {
+    fMax += 3;
+    if      (per < 15) fPoints += 3;
+    else if (per < 20) fPoints += 1.5;
+    else if (per > 30) fPoints -= 2;
+    else if (per > 25) fPoints -= 1;
+  }
+
+  const div = fundDict.dividend_yield;
+  if (div !== null && div !== undefined) {
+    fMax += 2;
+    if      (div > 3) fPoints += 2;
+    else if (div > 2) fPoints += 1;
+    else if (div === 0) fPoints -= 1;
+  }
+
+  const eps = fundDict.eps_growth;
+  if (eps !== null && eps !== undefined) {
+    fMax += 3;
+    if      (eps >  10) fPoints += 3;
+    else if (eps >   0) fPoints += 1.5;
+    else if (eps < -10) fPoints -= 3;
+    else                fPoints -= 1.5;
+  }
+
+  const om = fundDict.keijo_margin;
+  if (om !== null && om !== undefined) {
+    fMax += 2;
+    if      (om > 15) fPoints += 2;
+    else if (om >  8) fPoints += 1;
+    else if (om <  3) fPoints -= 2;
+    else if (om <  5) fPoints -= 1;
+  }
+
+  const fNormBase  = fMax === 0 ? 10 : fMax;
+  const fNormRange = fMax === 0 ? 20 : fMax * 2;
+  const longFundScore = fMax === 0
+    ? (fundDict.score ?? 50)
+    : Math.max(0, Math.min(100, (fPoints + fNormBase) / fNormRange * 100));
+
+  const score = longTechScore * 0.3 + longFundScore * 0.7;
+  return +score.toFixed(2);
+}
+
 function priceStep(price) {
   if (price < 500)   return 10;
   if (price < 2000)  return 50;
@@ -903,7 +1068,14 @@ function priceStep(price) {
   return 500;
 }
 
-function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50Val, sma20Val, overallSignal = 'neutral') {
+function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50Val, sma20Val, overallSignal = 'neutral', opts = {}) {
+  const {
+    targetMult  = 2,          // ATR倍率（目標価格）
+    stopSmaVal  = sma20Val,   // ストップ基準SMA（短期/中期=SMA20、長期=SMA50）
+    stopMult    = 1,          // ATR倍率（ストップ幅）
+    useHigh52w  = true,       // 52週高値を目標候補に含めるか（短期はfalse）
+    useLow52w   = true,       // 52週安値をストップ候補に含めるか
+  } = opts;
   try {
     const step = priceStep(currentPrice);
     const isBuy  = overallSignal === 'buy'  || overallSignal === 'strong_buy';
@@ -913,10 +1085,10 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
 
     if (isSell) {
       // ── 売りシグナル：下値目処（利確目安）とストップ（上値）を計算 ──
-      const atrDownTarget = atrVal ? currentPrice - atrVal * 2 : null;
+      const atrDownTarget = atrVal ? currentPrice - atrVal * targetMult : null;
       const downCandidates = [
         atrDownTarget,
-        lowPrice52w < currentPrice ? lowPrice52w : null,
+        useLow52w && lowPrice52w < currentPrice ? lowPrice52w : null,
       ].filter(v => v !== null && v < currentPrice);
       if (downCandidates.length === 0) downCandidates.push(currentPrice * 0.95);
       let rewardRaw = Math.min(...downCandidates);
@@ -924,11 +1096,11 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
       if (rewardTarget >= currentPrice) rewardTarget = currentPrice - step;
       rewardPct = +((rewardTarget - currentPrice) / currentPrice * 100).toFixed(2);
 
-      const rawStop = sma20Val !== null && atrVal !== null
-        ? Math.min(sma20Val + atrVal, highPrice)
+      const rawStop = stopSmaVal !== null && atrVal !== null
+        ? Math.min(stopSmaVal + atrVal * stopMult, highPrice)
         : highPrice;
       const stopRaw = rawStop <= currentPrice
-        ? currentPrice + (atrVal !== null ? atrVal : currentPrice * 0.03)
+        ? currentPrice + (atrVal !== null ? atrVal * stopMult : currentPrice * 0.03)
         : rawStop;
       stopLoss = Math.round(stopRaw / step) * step;
       if (stopLoss <= currentPrice) stopLoss = currentPrice + step;
@@ -936,26 +1108,24 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
 
     } else {
       // ── 買いシグナル or 中立：上値目処とストップ（下値）を計算 ──
-      // ATR×2（短期スイング向け・×3は高ボラ株で非現実的なため修正）
-      const atrTarget = atrVal ? currentPrice + atrVal * 2 : null;
+      const atrTarget = atrVal ? currentPrice + atrVal * targetMult : null;
       const candidates = [
         atrTarget,
-        highPrice > currentPrice ? highPrice * 1.02 : null,
+        useHigh52w && highPrice > currentPrice ? highPrice * 1.02 : null,
       ].filter(v => v !== null && v > currentPrice);
-      if (candidates.length === 0) candidates.push(currentPrice * 1.05);
+      if (candidates.length === 0) candidates.push(currentPrice * (1 + targetMult * 0.025));
       let rewardRaw = Math.max(...candidates);
       rewardTarget = Math.round(rewardRaw / step) * step;
       if (rewardTarget <= currentPrice) rewardTarget = (Math.floor(rewardRaw / step) + 1) * step;
       rewardPct = +((rewardTarget - currentPrice) / currentPrice * 100).toFixed(2);
 
-      const rawStop = sma20Val !== null && atrVal !== null
-        ? Math.max(sma20Val - atrVal, lowPrice52w)
-        : lowPrice52w;
+      const rawStop = stopSmaVal !== null && atrVal !== null
+        ? Math.max(stopSmaVal - atrVal * stopMult, useLow52w ? lowPrice52w : currentPrice * 0.85)
+        : (useLow52w ? lowPrice52w : currentPrice * 0.90);
       let stopLossRaw = rawStop >= currentPrice
-        ? currentPrice - (atrVal !== null ? atrVal * 2 : currentPrice * 0.03)
+        ? currentPrice - (atrVal !== null ? atrVal * targetMult : currentPrice * 0.03)
         : rawStop;
       stopLoss = Math.round(stopLossRaw / step) * step;
-      // 丸め後も現在値以上になっていないかチェック
       if (stopLoss >= currentPrice) stopLoss = currentPrice - step;
       riskPct = +((stopLoss - currentPrice) / currentPrice * 100).toFixed(2);
     }
@@ -1203,31 +1373,21 @@ async function buildReport(code) {
     };
   });
 
-  const techScore = techDict.score;
-  const fundScore = fundDict.score;
-  let overallScore = techScore * 0.6 + fundScore * 0.4;
+  // ── 3軸スコア計算 ──
+  const shortTermScore  = calcShortTermScore(techDict, fundDict, volumeAnomaly, currentPrice);
+  const mediumTermScore = calcMediumTermScore(techDict, fundDict, chartPatterns, volumeAnomaly);
+  const longTermScore   = calcLongTermScore(techDict, fundDict);
 
-  // B-1: チャートパターンをスコアに反映（GC/DC ±5点、高値安値切り上げ/切り下げ ±3点）
-  // GC/DC は現在の SMA 配置が一致している場合のみ有効（失速後の誤加算を防ぐ）
-  const sma20Now = techDict.sma_20, sma50Now = techDict.sma_50;
-  if (chartPatterns.golden_cross && sma20Now !== null && sma50Now !== null && sma20Now > sma50Now)
-    overallScore = Math.min(100, overallScore + 5);
-  if (chartPatterns.dead_cross && sma20Now !== null && sma50Now !== null && sma20Now < sma50Now)
-    overallScore = Math.max(0, overallScore - 5);
-  if (chartPatterns.higher_highs && chartPatterns.higher_lows) overallScore = Math.min(100, overallScore + 3);
-  if (chartPatterns.lower_highs  && chartPatterns.lower_lows)  overallScore = Math.max(0,   overallScore - 3);
+  const scores = {
+    short_term:  { score: shortTermScore,  signal: toSignal(shortTermScore),  label: '短期（数日〜1週間）' },
+    medium_term: { score: mediumTermScore, signal: toSignal(mediumTermScore), label: '中期（数週間〜2ヶ月）' },
+    long_term:   { score: longTermScore,   signal: toSignal(longTermScore),   label: '長期（数ヶ月〜1年）' },
+  };
 
-  // B-2: 出来高急増をトレンド方向に応じてスコアに反映（±3点）
-  if (volumeAnomaly.anomaly) {
-    const inUptrend   = techDict.signal === 'buy'  || techDict.signal === 'strong_buy';
-    const inDowntrend = techDict.signal === 'sell' || techDict.signal === 'strong_sell';
-    if (inUptrend)   overallScore = Math.min(100, overallScore + 3);
-    if (inDowntrend) overallScore = Math.max(0,   overallScore - 3);
-  }
-
-  overallScore = +overallScore.toFixed(2);
-  const confidence = +(overallScore / 100).toFixed(4);
-  const overallSignal = overallScore >= 75 ? 'strong_buy' : overallScore >= 60 ? 'buy' : overallScore < 25 ? 'strong_sell' : overallScore <= 40 ? 'sell' : 'neutral';
+  // 後方互換: overall_signal / confidence は中期スコアに基づく
+  const overallScore  = mediumTermScore;
+  const confidence    = +(overallScore / 100).toFixed(4);
+  const overallSignal = toSignal(overallScore);
 
   return {
     stock: { code, name, current_price: +currentPrice.toFixed(2), timestamp: new Date().toISOString() },
@@ -1235,6 +1395,7 @@ async function buildReport(code) {
     fundamental: fundDict,
     overall_signal: overallSignal,
     confidence,
+    scores,
     price_history: priceHistory,
     chart_patterns: chartPatterns,
     volume_anomaly: volumeAnomaly,
@@ -1274,7 +1435,14 @@ app.get('/api/v2/report', async (req, res) => {
     const overallSignal = base.overall_signal;
     const buyReasons = generateBuyReasons(tech, fund, curr, base.chart_patterns);
     const sellWarnings = generateSellWarnings(tech, fund, curr, base.chart_patterns);
-    const riskReward = calculateRiskReward(curr, h52, l52, tech.atr?.atr ?? null, tech.sma_50, tech.sma_20, overallSignal);
+
+    const atrVal  = tech.atr?.atr ?? null;
+    const sma20   = tech.sma_20;
+    const sma50   = tech.sma_50;
+    const rrShort  = calculateRiskReward(curr, h52, l52, atrVal, sma50, sma20, base.scores.short_term.signal,  { targetMult: 1,   stopSmaVal: sma20, stopMult: 0.5, useHigh52w: false, useLow52w: false });
+    const rrMedium = calculateRiskReward(curr, h52, l52, atrVal, sma50, sma20, base.scores.medium_term.signal, { targetMult: 2,   stopSmaVal: sma20, stopMult: 1   });
+    const rrLong   = calculateRiskReward(curr, h52, l52, atrVal, sma50, sma20, base.scores.long_term.signal,   { targetMult: 3,   stopSmaVal: sma50, stopMult: 1.5 });
+    const riskReward = rrMedium; // 後方互換
 
     const isBuySignal = overallSignal === 'buy' || overallSignal === 'strong_buy';
     const isSellSignal = overallSignal === 'sell' || overallSignal === 'strong_sell';
@@ -1293,6 +1461,11 @@ app.get('/api/v2/report', async (req, res) => {
       buy_reasons: buyReasons,
       sell_warnings: sellWarnings,
       risk_reward: riskReward,
+      risk_reward_horizons: {
+        short_term:  rrShort,
+        medium_term: rrMedium,
+        long_term:   rrLong,
+      },
       focus_points: extractFocusPoints(base.stock, tech, curr, h52, l52),
       qa: generateQA(tech, fund, riskReward, base.stock.name, overallSignal),
     };

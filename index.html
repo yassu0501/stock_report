@@ -22,6 +22,11 @@
     <button id="fetch-btn" onclick="fetchReport()">レポート取得</button>
     <button id="refresh-btn" class="btn-secondary" onclick="refreshReport()">更新</button>
   </div>
+  <div class="header-notice">
+    <span class="notice-source">データソース: Yahoo Finance（yfinance 経由）／ 価格は最大 15〜20 分の遅延あり</span>
+    <span class="notice-sep">｜</span>
+    <span class="notice-disclaimer">本ツールは情報提供のみを目的としており、投資助言ではありません</span>
+  </div>
 </header>
 
 <main>
@@ -48,19 +53,46 @@
     <!-- 総合判定 -->
     <div class="card" id="overall-card" style="margin-bottom:16px;">
       <div class="card-title">総合判定</div>
-      <div class="overall-content">
-        <div class="overall-main">
-          <div class="overall-signal-text" id="o-signal"></div>
-          <div class="overall-judgment" id="o-judgment"></div>
+      <div class="scores-grid">
+        <!-- 短期 -->
+        <div class="score-horizon-card" id="o-short-card">
+          <div class="score-horizon-label">短期</div>
+          <div class="score-horizon-period">数日〜1週間</div>
+          <div class="score-horizon-signal" id="o-short-signal"></div>
+          <div class="score-horizon-bar-wrap">
+            <div class="score-horizon-bar-track">
+              <div class="score-horizon-bar-fill" id="o-short-bar" style="width:0%"></div>
+            </div>
+            <div class="score-horizon-pct" id="o-short-pct"></div>
+          </div>
         </div>
-        <div class="overall-side">
-          <div class="confidence-label">信頼度</div>
-          <div class="confidence-value" id="o-confidence"></div>
-          <div class="confidence-bar-track">
-            <div class="confidence-bar-fill" id="o-confidence-bar"></div>
+        <!-- 中期 -->
+        <div class="score-horizon-card score-horizon-center" id="o-medium-card">
+          <div class="score-horizon-label">中期</div>
+          <div class="score-horizon-period">数週間〜2ヶ月</div>
+          <div class="score-horizon-signal" id="o-medium-signal"></div>
+          <div class="score-horizon-bar-wrap">
+            <div class="score-horizon-bar-track">
+              <div class="score-horizon-bar-fill" id="o-medium-bar" style="width:0%"></div>
+            </div>
+            <div class="score-horizon-pct" id="o-medium-pct"></div>
+          </div>
+        </div>
+        <!-- 長期 -->
+        <div class="score-horizon-card" id="o-long-card">
+          <div class="score-horizon-label">長期</div>
+          <div class="score-horizon-period">数ヶ月〜1年</div>
+          <div class="score-horizon-signal" id="o-long-signal"></div>
+          <div class="score-horizon-bar-wrap">
+            <div class="score-horizon-bar-track">
+              <div class="score-horizon-bar-fill" id="o-long-bar" style="width:0%"></div>
+            </div>
+            <div class="score-horizon-pct" id="o-long-pct"></div>
           </div>
         </div>
       </div>
+      <!-- 総合判定テキスト（後方互換: QA・レポート等で参照） -->
+      <div class="overall-judgment" id="o-judgment" style="margin-top:12px;"></div>
     </div>
 
 
@@ -116,7 +148,7 @@
           </div>
         </div>
         <div class="metric-row">
-          <span class="metric-label">ボラティリティ</span>
+          <span class="metric-label">値動き分類</span>
           <div class="metric-right">
             <span class="metric-value" id="t-vol-std"></span>
             <span id="t-vol-badge"></span>
@@ -221,9 +253,9 @@
           <div class="metric-right" id="d-patterns"></div>
         </div>
 
-        <div class="metric-section-label">モメンタム &amp; ボラティリティ</div>
+        <div class="metric-section-label">モメンタム &amp; 値幅</div>
         <div class="metric-row">
-          <span class="metric-label">ATR（ボラティリティ）</span>
+          <span class="metric-label">ATR（平均値幅）</span>
           <div class="metric-right">
             <span class="metric-value" id="d-atr-val"></span>
             <span id="d-atr-sig"></span>
@@ -341,23 +373,71 @@
     <!-- リスク・リワード -->
     <div class="card" id="risk-reward-card" style="margin-top:16px;">
       <div class="card-title">リスク・リワード</div>
-      <div class="rr-grid">
-        <div class="rr-item">
-          <div class="rr-label">目標株価</div>
-          <div class="rr-value buy" id="rr-target"></div>
-          <div class="rr-sub" id="rr-reward-pct"></div>
-        </div>
-        <div class="rr-item">
-          <div class="rr-label">損切りライン</div>
-          <div class="rr-value sell" id="rr-stop"></div>
-          <div class="rr-sub" id="rr-risk-pct"></div>
-        </div>
-        <div class="rr-item">
-          <div class="rr-label">R/R 比率</div>
-          <div class="rr-value" id="rr-ratio"></div>
-        </div>
+      <div class="rr-tabs">
+        <button class="rr-tab"        data-horizon="short"  onclick="switchRRTab('short',  this)">短期</button>
+        <button class="rr-tab active" data-horizon="medium" onclick="switchRRTab('medium', this)">中期</button>
+        <button class="rr-tab"        data-horizon="long"   onclick="switchRRTab('long',   this)">長期</button>
       </div>
-      <div class="rr-evaluation" id="rr-evaluation"></div>
+      <!-- 短期 -->
+      <div class="rr-panel" id="rr-panel-short" style="display:none;">
+        <div class="rr-grid">
+          <div class="rr-item">
+            <div class="rr-label">目標株価</div>
+            <div class="rr-value buy" id="rr-short-target"></div>
+            <div class="rr-sub" id="rr-short-reward-pct"></div>
+          </div>
+          <div class="rr-item">
+            <div class="rr-label">損切りライン</div>
+            <div class="rr-value sell" id="rr-short-stop"></div>
+            <div class="rr-sub" id="rr-short-risk-pct"></div>
+          </div>
+          <div class="rr-item">
+            <div class="rr-label">R/R 比率</div>
+            <div class="rr-value" id="rr-short-ratio"></div>
+          </div>
+        </div>
+        <div class="rr-evaluation" id="rr-short-evaluation"></div>
+      </div>
+      <!-- 中期 -->
+      <div class="rr-panel" id="rr-panel-medium">
+        <div class="rr-grid">
+          <div class="rr-item">
+            <div class="rr-label">目標株価</div>
+            <div class="rr-value buy" id="rr-medium-target"></div>
+            <div class="rr-sub" id="rr-medium-reward-pct"></div>
+          </div>
+          <div class="rr-item">
+            <div class="rr-label">損切りライン</div>
+            <div class="rr-value sell" id="rr-medium-stop"></div>
+            <div class="rr-sub" id="rr-medium-risk-pct"></div>
+          </div>
+          <div class="rr-item">
+            <div class="rr-label">R/R 比率</div>
+            <div class="rr-value" id="rr-medium-ratio"></div>
+          </div>
+        </div>
+        <div class="rr-evaluation" id="rr-medium-evaluation"></div>
+      </div>
+      <!-- 長期 -->
+      <div class="rr-panel" id="rr-panel-long" style="display:none;">
+        <div class="rr-grid">
+          <div class="rr-item">
+            <div class="rr-label">目標株価</div>
+            <div class="rr-value buy" id="rr-long-target"></div>
+            <div class="rr-sub" id="rr-long-reward-pct"></div>
+          </div>
+          <div class="rr-item">
+            <div class="rr-label">損切りライン</div>
+            <div class="rr-value sell" id="rr-long-stop"></div>
+            <div class="rr-sub" id="rr-long-risk-pct"></div>
+          </div>
+          <div class="rr-item">
+            <div class="rr-label">R/R 比率</div>
+            <div class="rr-value" id="rr-long-ratio"></div>
+          </div>
+        </div>
+        <div class="rr-evaluation" id="rr-long-evaluation"></div>
+      </div>
     </div>
 
     <!-- 注目ポイント -->
@@ -378,5 +458,22 @@
 </main>
 
 <script src="/app.js?v=11"></script>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-disclaimer">
+      <strong>免責事項</strong>
+      本ツールが提供する情報・シグナル・スコアはすべて情報提供のみを目的としており、特定の有価証券の売買を推奨するものではありません。
+      投資判断はご自身の責任において行ってください。市場データには遅延が含まれる場合があり、その正確性・完全性を保証するものではありません。
+    </div>
+    <div class="footer-meta">
+      <span>データソース: <a href="https://finance.yahoo.com" target="_blank" rel="noopener noreferrer">Yahoo Finance</a>（yfinance 経由、最大 15〜20 分遅延）</span>
+      <span class="footer-sep">｜</span>
+      <span>対象: yfinance サポート銘柄（日本株は銘柄コード + .T）</span>
+      <span class="footer-sep">｜</span>
+      <span>本ツールは Yahoo Finance の利用規約に従って使用しています</span>
+    </div>
+  </div>
+</footer>
 </body>
 </html>

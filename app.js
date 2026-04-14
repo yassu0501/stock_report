@@ -31,6 +31,13 @@ function setPeriod(period) {
   });
 }
 
+function switchRRTab(horizon, btn) {
+  document.querySelectorAll('.rr-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.rr-panel').forEach(p => { p.style.display = 'none'; });
+  btn.classList.add('active');
+  document.getElementById(`rr-panel-${horizon}`).style.display = '';
+}
+
 // ── クライアント側インジケーター計算 ─────────────────────────────────────────
 
 
@@ -583,24 +590,40 @@ function renderReport(data, isFromCache) {
     ? f.avg_volume_20.toLocaleString() + '株'
     : '<span class="null-val">N/A</span>';
 
-  // 総合
-  const oSig = data.overall_signal;
-  const oEl = document.getElementById('o-signal');
-  oEl.textContent = signalLabel(oSig);
-  oEl.className = `overall-signal-text ${badgeClass(oSig)}`;
-
+  // 総合（3軸スコア）
   const oCard = document.getElementById('overall-card');
   oCard.classList.remove('sig-buy', 'sig-sell', 'sig-neutral');
-  oCard.classList.add(`sig-${badgeClass(oSig)}`);
 
-  const confidencePct = (data.confidence * 100);
-  document.getElementById('o-confidence').textContent = `${confidencePct.toFixed(1)}%`;
-  
-  const oBar = document.getElementById('o-confidence-bar');
-  if (oBar) {
-    oBar.style.width = `${confidencePct}%`;
-    oBar.style.background = signalColor(oSig);
-  }
+  const horizons = [
+    { key: 'short_term',  cardId: 'o-short-card',  sigId: 'o-short-signal',  barId: 'o-short-bar',  pctId: 'o-short-pct'  },
+    { key: 'medium_term', cardId: 'o-medium-card', sigId: 'o-medium-signal', barId: 'o-medium-bar', pctId: 'o-medium-pct' },
+    { key: 'long_term',   cardId: 'o-long-card',   sigId: 'o-long-signal',   barId: 'o-long-bar',   pctId: 'o-long-pct'   },
+  ];
+
+  const scores = data.scores || {};
+  horizons.forEach(({ key, cardId, sigId, barId, pctId }) => {
+    const s = scores[key];
+    if (!s) return;
+    const sig = s.signal;
+    const bc  = badgeClass(sig);
+
+    const sigEl = document.getElementById(sigId);
+    sigEl.innerHTML = `<span class="badge ${bc}">${signalLabel(sig)}</span>`;
+
+    const barEl = document.getElementById(barId);
+    barEl.style.width      = `${s.score}%`;
+    barEl.style.background = signalColor(sig);
+
+    document.getElementById(pctId).textContent = `${s.score.toFixed(1)}%`;
+
+    const cardEl = document.getElementById(cardId);
+    cardEl.classList.remove('sig-buy', 'sig-sell', 'sig-neutral');
+    cardEl.classList.add(`horizon-${bc}`);
+  });
+
+  // カード全体の色は中期シグナルに合わせる
+  const medSig = scores.medium_term?.signal ?? data.overall_signal;
+  oCard.classList.add(`sig-${badgeClass(medSig)}`);
 
   // ─── v2.5 レポートセクション ───
   const rpt = data.report;
@@ -650,19 +673,27 @@ function renderReport(data, isFromCache) {
       sellEl.innerHTML = '<span class="null-val">警告なし</span>';
     }
 
-    // リスク・リワード
-    const rr = rpt.risk_reward || {};
-    document.getElementById('rr-target').textContent =
-      rr.reward_target != null ? `¥${rr.reward_target.toLocaleString()}` : 'N/A';
-    document.getElementById('rr-reward-pct').textContent =
-      rr.reward_percentage != null ? `+${rr.reward_percentage.toFixed(1)}%` : '';
-    document.getElementById('rr-stop').textContent =
-      rr.stop_loss != null ? `¥${rr.stop_loss.toLocaleString()}` : 'N/A';
-    document.getElementById('rr-risk-pct').textContent =
-      rr.risk_percentage != null ? `${rr.risk_percentage.toFixed(1)}%` : '';
-    document.getElementById('rr-ratio').textContent =
-      rr.risk_reward_ratio != null ? `${rr.risk_reward_ratio.toFixed(2)}` : 'N/A';
-    document.getElementById('rr-evaluation').textContent = rr.evaluation || '';
+    // リスク・リワード（3ホリゾン）
+    const rrH = rpt.risk_reward_horizons || {};
+    const rrDefs = [
+      { key: 'short_term',  id: 'short'  },
+      { key: 'medium_term', id: 'medium' },
+      { key: 'long_term',   id: 'long'   },
+    ];
+    rrDefs.forEach(({ key, id }) => {
+      const rr = rrH[key] || {};
+      document.getElementById(`rr-${id}-target`).textContent =
+        rr.reward_target != null ? `¥${rr.reward_target.toLocaleString()}` : 'N/A';
+      document.getElementById(`rr-${id}-reward-pct`).textContent =
+        rr.reward_percentage != null ? `+${rr.reward_percentage.toFixed(1)}%` : '';
+      document.getElementById(`rr-${id}-stop`).textContent =
+        rr.stop_loss != null ? `¥${rr.stop_loss.toLocaleString()}` : 'N/A';
+      document.getElementById(`rr-${id}-risk-pct`).textContent =
+        rr.risk_percentage != null ? `${rr.risk_percentage.toFixed(1)}%` : '';
+      document.getElementById(`rr-${id}-ratio`).textContent =
+        rr.risk_reward_ratio != null ? `${rr.risk_reward_ratio.toFixed(2)}` : 'N/A';
+      document.getElementById(`rr-${id}-evaluation`).textContent = rr.evaluation || '';
+    });
 
     // 注目ポイント
     const fpEl = document.getElementById('r-focus-points');
