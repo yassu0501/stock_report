@@ -1124,7 +1124,7 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
         ? Math.max(stopSmaVal - atrVal * stopMult, useLow52w ? lowPrice52w : currentPrice * 0.85)
         : (useLow52w ? lowPrice52w : currentPrice * 0.90);
       let stopLossRaw = rawStop >= currentPrice
-        ? currentPrice - (atrVal !== null ? atrVal * targetMult : currentPrice * 0.03)
+        ? currentPrice - (atrVal !== null ? atrVal * stopMult : currentPrice * 0.03)
         : rawStop;
       stopLoss = Math.round(stopLossRaw / step) * step;
       if (stopLoss >= currentPrice) stopLoss = currentPrice - step;
@@ -1162,7 +1162,7 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
       }
     }
 
-    return { reward_target: rewardTarget, reward_percentage: rewardPct, stop_loss: stopLoss, risk_percentage: riskPct, risk_reward_ratio: ratio, evaluation };
+    return { reward_target: rewardTarget, reward_percentage: rewardPct, stop_loss: stopLoss, risk_percentage: riskPct, risk_reward_ratio: ratio, evaluation, is_sell: isSell };
   } catch {
     return { reward_target: null, reward_percentage: null, stop_loss: null, risk_percentage: null, risk_reward_ratio: null, evaluation: '計算中にエラーが発生しました' };
   }

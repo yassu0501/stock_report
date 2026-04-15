@@ -682,14 +682,37 @@ function renderReport(data, isFromCache) {
     ];
     rrDefs.forEach(({ key, id }) => {
       const rr = rrH[key] || {};
-      document.getElementById(`rr-${id}-target`).textContent =
-        rr.reward_target != null ? `¥${rr.reward_target.toLocaleString()}` : 'N/A';
+      const isSell = !!rr.is_sell;
+
+      // 売りシグナル時はラベルを「下値目処」「上値ストップ」に変更
+      const panel = document.getElementById(`rr-panel-${id}`);
+      if (panel) {
+        const labels = panel.querySelectorAll('.rr-label');
+        if (labels.length >= 2) {
+          labels[0].textContent = isSell ? '下値目処（売り利確）' : '目標株価';
+          labels[1].textContent = isSell ? '損切りライン（上値）' : '損切りライン';
+        }
+      }
+
+      // 目標価格（売りなら下向き、買いなら上向き）
+      const targetEl = document.getElementById(`rr-${id}-target`);
+      if (targetEl) {
+        targetEl.textContent = rr.reward_target != null ? `¥${rr.reward_target.toLocaleString()}` : 'N/A';
+        targetEl.className = `rr-value ${isSell ? 'sell' : 'buy'}`;
+      }
+      // パーセント表示（符号を値から取る）
       document.getElementById(`rr-${id}-reward-pct`).textContent =
-        rr.reward_percentage != null ? `+${rr.reward_percentage.toFixed(1)}%` : '';
-      document.getElementById(`rr-${id}-stop`).textContent =
-        rr.stop_loss != null ? `¥${rr.stop_loss.toLocaleString()}` : 'N/A';
+        rr.reward_percentage != null ? `${rr.reward_percentage > 0 ? '+' : ''}${rr.reward_percentage.toFixed(1)}%` : '';
+
+      // 損切りライン（売りなら上、買いなら下）
+      const stopEl = document.getElementById(`rr-${id}-stop`);
+      if (stopEl) {
+        stopEl.textContent = rr.stop_loss != null ? `¥${rr.stop_loss.toLocaleString()}` : 'N/A';
+        stopEl.className = `rr-value ${isSell ? 'buy' : 'sell'}`;
+      }
       document.getElementById(`rr-${id}-risk-pct`).textContent =
         rr.risk_percentage != null ? `${rr.risk_percentage.toFixed(1)}%` : '';
+
       document.getElementById(`rr-${id}-ratio`).textContent =
         rr.risk_reward_ratio != null ? `${rr.risk_reward_ratio.toFixed(2)}` : 'N/A';
       document.getElementById(`rr-${id}-evaluation`).textContent = rr.evaluation || '';
