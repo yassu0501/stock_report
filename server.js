@@ -1112,7 +1112,7 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
       const atrTarget = atrVal ? currentPrice + atrVal * targetMult : null;
       const candidates = [
         atrTarget,
-        useHigh52w && highPrice > currentPrice ? highPrice * high52wMult : null,
+        useHigh52w ? highPrice * high52wMult : null,
       ].filter(v => v !== null && v > currentPrice);
       if (candidates.length === 0) candidates.push(currentPrice * (1 + targetMult * 0.025));
       let rewardRaw = Math.max(...candidates);
