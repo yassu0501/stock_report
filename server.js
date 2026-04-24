@@ -489,6 +489,7 @@ function evaluateKeijoMargin(pct) {
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 let _yahooCrumb = null;
 let _yahooCookie = null;
+let _crumbPromise = null;
 
 async function fetchKabutanFundamental(code) {
   const stockCode = code.split('.')[0];
@@ -582,32 +583,40 @@ async function fetchKabutanFundamental(code) {
 }
 
 async function getYahooCrumb() {
-  if (_yahooCrumb) return;
-  const consentRes = await fetch('https://finance.yahoo.com/', {
-    headers: { 'User-Agent': UA },
-    redirect: 'follow',
-  });
-  const rawCookie = consentRes.headers.getSetCookie?.() ?? [];
-  _yahooCookie = Array.isArray(rawCookie) ? rawCookie.map(c => c.split(';')[0]).join('; ') : '';
-  const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-    headers: { 'User-Agent': UA, 'Cookie': _yahooCookie },
-  });
-  if (!crumbRes.ok) throw new Error(`Crumb fetch failed: ${crumbRes.status}`);
-  _yahooCrumb = await crumbRes.text();
+  if (_yahooCrumb) return { crumb: _yahooCrumb, cookie: _yahooCookie };
+  if (!_crumbPromise) {
+    _crumbPromise = (async () => {
+      const consentRes = await fetch('https://finance.yahoo.com/', {
+        headers: { 'User-Agent': UA },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000),
+      });
+      const rawCookie = consentRes.headers.getSetCookie?.() ?? [];
+      _yahooCookie = Array.isArray(rawCookie) ? rawCookie.map(c => c.split(';')[0]).join('; ') : '';
+      const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+        headers: { 'User-Agent': UA, 'Cookie': _yahooCookie },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!crumbRes.ok) throw new Error(`Crumb fetch failed: ${crumbRes.status}`);
+      _yahooCrumb = await crumbRes.text();
+      return { crumb: _yahooCrumb, cookie: _yahooCookie };
+    })().finally(() => { _crumbPromise = null; });
+  }
+  return _crumbPromise;
 }
 
 async function analyzeFundamental(code, priceHistory) {
   let info = {};
   try {
-    await getYahooCrumb();
-    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${code}?modules=summaryDetail%2CdefaultKeyStatistics%2CfinancialData%2Cprice&crumb=${encodeURIComponent(_yahooCrumb)}`;
+    const { crumb, cookie } = await getYahooCrumb();
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${code}?modules=summaryDetail%2CdefaultKeyStatistics%2CfinancialData%2Cprice&crumb=${encodeURIComponent(crumb)}`;
     const res = await fetch(url, {
       headers: {
         'User-Agent': UA,
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9',
         'Referer': 'https://finance.yahoo.com/',
-        'Cookie': _yahooCookie,
+        'Cookie': cookie,
       },
     });
     if (res.ok) {
@@ -707,6 +716,14 @@ async function analyzeFundamental(code, priceHistory) {
   const score = Math.max(0, Math.min(100, (points + 7) / 19 * 100));
   const signal = score >= 75 ? 'strong_positive' : score >= 60 ? 'positive' : score >= 40 ? 'neutral' : score >= 25 ? 'negative' : 'strong_negative';
 
+  // PEGレシオ: PER ÷ EPS成長率（%）。1.0以下が割安の目安
+  let pegRatio = null;
+  let pegSignal = 'unknown';
+  if (per !== null && epsGrowth !== null && epsGrowth > 0) {
+    pegRatio = +(per / epsGrowth).toFixed(2);
+    pegSignal = pegRatio < 0.5 ? 'very_cheap' : pegRatio < 1.0 ? 'cheap' : pegRatio <= 1.5 ? 'fair' : 'expensive';
+  }
+
   return {
     name, per: per !== null ? +per.toFixed(2) : null, pbr: pbr !== null ? +pbr.toFixed(2) : null,
     dividend_yield: dividendYield,
@@ -715,6 +732,7 @@ async function analyzeFundamental(code, priceHistory) {
     ytd_performance: ytdPerformance,
     shinyo_bairitu: shinyoBairitu, shinyo_bairitu_eval: shinyoEval,
     eps_growth: epsGrowth, eps_growth_eval: epsGrowthEval,
+    peg_ratio: pegRatio, peg_signal: pegSignal,
     keijo_margin: keijoMargin, keijo_margin_eval: keijoMarginEval,
     sales_growth: salesGrowth,
     avg_volume_20: avgVolume20,
@@ -1163,7 +1181,8 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
     }
 
     return { reward_target: rewardTarget, reward_percentage: rewardPct, stop_loss: stopLoss, risk_percentage: riskPct, risk_reward_ratio: ratio, evaluation, is_sell: isSell };
-  } catch {
+  } catch (err) {
+    console.error('[calculateRiskReward] failed:', err.message);
     return { reward_target: null, reward_percentage: null, stop_loss: null, risk_percentage: null, risk_reward_ratio: null, evaluation: '計算中にエラーが発生しました' };
   }
 }
@@ -1285,7 +1304,7 @@ async function fetchKabutanPrice(code) {
   const fetchPage = async (page) => {
     const url = `https://kabutan.jp/stock/kabuka?code=${stockCode}&ashi=day&page=${page}`;
     try {
-      const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'ja,en;q=0.9' } });
+      const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'ja,en;q=0.9' }, signal: AbortSignal.timeout(8000) });
       if (!res.ok) return [];
       return parsePage(await res.text());
     } catch {
@@ -1336,11 +1355,13 @@ async function buildReport(code) {
   let fundDict;
   try {
     fundDict = await analyzeFundamental(code, df);
-  } catch {
+  } catch (err) {
+    console.error('[buildReport] fundamental fetch failed:', err.message);
     fundDict = {
       name: code, per: null, dividend_yield: null, ytd_performance: null,
       shinyo_bairitu: null, shinyo_bairitu_eval: 'unknown',
       eps_growth: null, eps_growth_eval: 'unknown',
+      peg_ratio: null, peg_signal: 'unknown',
       keijo_margin: null, keijo_margin_eval: 'unknown', score: 50.0, signal: 'neutral',
     };
   }
@@ -1353,10 +1374,12 @@ async function buildReport(code) {
   const allBB   = bollingerBandsHistory(prices);
   const allRSI  = rsiHistory(prices);
   const allMACD = macdHistory(prices);
+  const allSMA20 = smaHistory(prices, 20);
+  const allSMA50 = smaHistory(prices, 50);
   const priceHistory = recentDf.map((row, i) => {
     const pos = offset + i;
-    const s20 = sma(prices.slice(0, pos + 1), 20);
-    const s50 = sma(prices.slice(0, pos + 1), 50);
+    const s20 = allSMA20[pos];
+    const s50 = allSMA50[pos];
     return {
       date: row.date,
       open: +row.open.toFixed(2),
@@ -1476,7 +1499,10 @@ app.get('/api/v2/report', async (req, res) => {
     return res.json(result);
   } catch (err) {
     console.error(`Report error [${code}]:`, err.message);
-    return res.status(404).json({ detail: `銘柄 '${code}' の取得に失敗しました: ${err.message}` });
+    if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+      return res.status(503).json({ detail: 'スクレイピングタイムアウトが発生しました' });
+    }
+    return res.status(503).json({ detail: `データ取得に失敗しました: ${err.message}` });
   }
 });
 

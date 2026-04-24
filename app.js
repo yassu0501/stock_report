@@ -92,6 +92,14 @@ function signalLabel(sig) {
   return map[sig] || sig?.toUpperCase() || '-';
 }
 
+function el(tag, opts = {}) {
+  const e = document.createElement(tag);
+  if (opts.cls) e.className = opts.cls;
+  if (opts.text != null) e.textContent = opts.text;
+  if (opts.html != null) e.innerHTML = opts.html;
+  return e;
+}
+
 function animateCards() {
   document.querySelectorAll('.card').forEach((el, i) => {
     setTimeout(() => el.classList.add('visible'), i * 80);
@@ -139,7 +147,8 @@ function renderChart(priceHistory) {
   // 高さ配分（px, 580pxチャート想定）
   // メイン占有 = 残りをサブに分配
   const subCount = [showVol, showRSI, showMACD].filter(Boolean).length;
-  const subH    = 90;  // 各サブ高さ(px)
+  const isMobile = window.innerWidth < 600;
+  const subH    = isMobile ? 60 : 90;  // 各サブ高さ(px)
   const subGap  = 12;
   const sliderH = 28;
   const topPad  = 36;
@@ -443,6 +452,19 @@ function renderReport(data, isFromCache) {
     ? (fEps >= 0 ? '+' : '') + fEps.toFixed(1) + '%'
     : '<span class="null-val">N/A</span>';
 
+  const fPeg = data.fundamental.peg_ratio;
+  const fPegSig = data.fundamental.peg_signal;
+  const pegLabelMap = { very_cheap: '割安（かなり）', cheap: '割安', fair: '適正', expensive: '割高', unknown: null };
+  const pegColorMap = { very_cheap: 'var(--buy)', cheap: 'var(--buy)', fair: 'var(--neutral)', expensive: 'var(--sell)', unknown: '' };
+  if (fPeg != null) {
+    const label = pegLabelMap[fPegSig] || '';
+    const color = pegColorMap[fPegSig] || '';
+    document.getElementById('f-peg').innerHTML =
+      `${fPeg.toFixed(2)} <span style="color:${color};font-size:0.85em;">${label}</span>`;
+  } else {
+    document.getElementById('f-peg').innerHTML = '<span class="null-val">N/A <span style="font-size:0.8em;color:var(--muted)">(PER or EPS成長率が不明)</span></span>';
+  }
+
   const fShinyo = data.fundamental.shinyo_bairitu;
   document.getElementById('f-shinyo').innerHTML = fShinyo != null
     ? fShinyo.toFixed(2) + '倍'
@@ -649,28 +671,30 @@ function renderReport(data, isFromCache) {
 
     // 買い根拠
     const buyEl = document.getElementById('r-buy-reasons');
+    buyEl.innerHTML = '';
     if (rpt.buy_reasons && rpt.buy_reasons.length > 0) {
-      buyEl.innerHTML = rpt.buy_reasons.map(r =>
-        `<div class="reason-item buy">
-          <span class="reason-indicator">${r.indicator}</span>
-          <span class="reason-detail">${r.detail}</span>
-        </div>`
-      ).join('');
+      rpt.buy_reasons.forEach(r => {
+        const div = el('div', { cls: 'reason-item buy' });
+        div.appendChild(el('span', { cls: 'reason-indicator', text: r.indicator }));
+        div.appendChild(el('span', { cls: 'reason-detail', text: r.detail }));
+        buyEl.appendChild(div);
+      });
     } else {
-      buyEl.innerHTML = '<span class="null-val">買いシグナルなし</span>';
+      buyEl.appendChild(el('span', { cls: 'null-val', text: '買いシグナルなし' }));
     }
 
     // 売り警告
     const sellEl = document.getElementById('r-sell-warnings');
+    sellEl.innerHTML = '';
     if (rpt.sell_warnings && rpt.sell_warnings.length > 0) {
-      sellEl.innerHTML = rpt.sell_warnings.map(r =>
-        `<div class="reason-item sell">
-          <span class="reason-indicator">${r.indicator}</span>
-          <span class="reason-detail">${r.detail}</span>
-        </div>`
-      ).join('');
+      rpt.sell_warnings.forEach(r => {
+        const div = el('div', { cls: 'reason-item sell' });
+        div.appendChild(el('span', { cls: 'reason-indicator', text: r.indicator }));
+        div.appendChild(el('span', { cls: 'reason-detail', text: r.detail }));
+        sellEl.appendChild(div);
+      });
     } else {
-      sellEl.innerHTML = '<span class="null-val">警告なし</span>';
+      sellEl.appendChild(el('span', { cls: 'null-val', text: '警告なし' }));
     }
 
     // リスク・リワード（3ホリゾン）
@@ -720,33 +744,35 @@ function renderReport(data, isFromCache) {
 
     // 注目ポイント
     const fpEl = document.getElementById('r-focus-points');
+    fpEl.innerHTML = '';
     if (rpt.focus_points && rpt.focus_points.length > 0) {
-      fpEl.innerHTML = rpt.focus_points.map(fp =>
-        `<div class="focus-item">
-          <div class="focus-header">
-            <span class="focus-title">${fp.title}</span>
-            <span class="focus-level">¥${fp.level != null ? fp.level.toLocaleString() : 'N/A'}</span>
-            <span class="focus-importance">${'★'.repeat(fp.importance)}${'☆'.repeat(5 - fp.importance)}</span>
-          </div>
-          <p class="focus-desc">${fp.description}</p>
-          <p class="focus-action">${fp.action}</p>
-        </div>`
-      ).join('');
+      rpt.focus_points.forEach(fp => {
+        const div = el('div', { cls: 'focus-item' });
+        const header = el('div', { cls: 'focus-header' });
+        header.appendChild(el('span', { cls: 'focus-title', text: fp.title }));
+        header.appendChild(el('span', { cls: 'focus-level', text: '¥' + (fp.level != null ? fp.level.toLocaleString() : 'N/A') }));
+        header.appendChild(el('span', { cls: 'focus-importance', text: '★'.repeat(fp.importance) + '☆'.repeat(5 - fp.importance) }));
+        div.appendChild(header);
+        div.appendChild(el('p', { cls: 'focus-desc', text: fp.description }));
+        div.appendChild(el('p', { cls: 'focus-action', text: fp.action }));
+        fpEl.appendChild(div);
+      });
     } else {
-      fpEl.innerHTML = '<span class="null-val">データなし</span>';
+      fpEl.appendChild(el('span', { cls: 'null-val', text: 'データなし' }));
     }
 
     // Q&A
     const qaEl = document.getElementById('r-qa');
+    qaEl.innerHTML = '';
     if (rpt.qa && rpt.qa.length > 0) {
-      qaEl.innerHTML = rpt.qa.map(qa =>
-        `<div class="qa-item">
-          <div class="qa-q">${qa.question}</div>
-          <div class="qa-a">${qa.answer}</div>
-        </div>`
-      ).join('');
+      rpt.qa.forEach(qa => {
+        const div = el('div', { cls: 'qa-item' });
+        div.appendChild(el('div', { cls: 'qa-q', text: qa.question }));
+        div.appendChild(el('div', { cls: 'qa-a', text: qa.answer }));
+        qaEl.appendChild(div);
+      });
     } else {
-      qaEl.innerHTML = '<span class="null-val">データなし</span>';
+      qaEl.appendChild(el('span', { cls: 'null-val', text: 'データなし' }));
     }
 
     // 総合判定テキスト
@@ -886,6 +912,29 @@ function normalizeCode(raw) {
 
 let currentCode = '';
 
+function cacheReport(code, data) {
+  setCachedReport(code, data);
+}
+
+async function _doFetch(url, code) {
+  setLoading(true);
+  hideError();
+  try {
+    const res = await fetchWithRetry(url);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(body.detail || res.statusText), { status: res.status });
+    }
+    const data = await res.json();
+    cacheReport(code, data);
+    renderReport(data, false);
+  } catch (err) {
+    handleFetchError(err, code);
+  } finally {
+    setLoading(false);
+  }
+}
+
 async function fetchReport() {
   const raw = document.getElementById('code-input').value.trim();
   if (!raw) { showError('銘柄コードを入力してください'); return; }
@@ -894,28 +943,13 @@ async function fetchReport() {
   document.getElementById('code-input').value = code;
   hideError();
 
-  // localStorage キャッシュ確認
   const cached = getCachedReport(code);
   if (cached) {
     renderReport(cached.data, true, code);
     return;
   }
 
-  setLoading(true);
-  try {
-    const res = await fetchWithRetry(`${API_BASE}/api/v2/report?code=${encodeURIComponent(code)}`);
-    const data = await res.json();
-    if (!res.ok) {
-      const errMsg = data.error?.message || data.detail || `エラー: ${res.status}`;
-      throw Object.assign(new Error(errMsg), { status: res.status });
-    }
-    setCachedReport(code, data);
-    renderReport(data, false, code);
-  } catch (e) {
-    handleFetchError(e, code);
-  } finally {
-    setLoading(false);
-  }
+  await _doFetch(`${API_BASE}/api/v2/report?code=${encodeURIComponent(code)}`, code);
 }
 
 async function refreshReport() {
@@ -925,23 +959,9 @@ async function refreshReport() {
   currentCode = code;
   document.getElementById('code-input').value = code;
   hideError();
-  clearCacheForCode(code); // localStorage を削除して強制更新
+  clearCacheForCode(code);
 
-  setLoading(true);
-  try {
-    const res = await fetchWithRetry(`${API_BASE}/api/v2/refresh?code=${encodeURIComponent(code)}`);
-    const data = await res.json();
-    if (!res.ok) {
-      const errMsg = data.error?.message || data.detail || `エラー: ${res.status}`;
-      throw Object.assign(new Error(errMsg), { status: res.status });
-    }
-    setCachedReport(code, data);
-    renderReport(data, false, code);
-  } catch (e) {
-    handleFetchError(e, code);
-  } finally {
-    setLoading(false);
-  }
+  await _doFetch(`${API_BASE}/api/v2/refresh?code=${encodeURIComponent(code)}`, code);
 }
 
 // Enterキーでフェッチ

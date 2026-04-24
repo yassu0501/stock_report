@@ -9,8 +9,8 @@
   --border:        #2a2d3a;
   --text:          #e8eaf0;
   --muted:         #8b8fa8;
-  --text-muted:    #8b8fa8;
   --text-secondary:#aaaaaa;
+  --accent:        #e6a817;
   --radius:        12px;
   --focus-ring:    #5b9cf6;
 }
@@ -534,8 +534,7 @@ main {
     transform: none;
     transition: none;
   }
-  .score-bar-fill,
-  .confidence-bar-fill {
+  .score-bar-fill {
     transition: none;
   }
   .spinner {
@@ -702,101 +701,6 @@ main {
   }
 }
 
-.overall-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 32px;
-  flex-wrap: wrap;
-}
-.overall-main {
-  flex: 2;
-  text-align: left;
-}
-.overall-side {
-  flex: 1;
-  text-align: center;
-  border-left: 1px solid var(--border);
-  padding: 12px 0 12px 32px;
-  min-width: 160px;
-}
-.overall-signal-text {
-  font-size: 3.2rem;
-  font-weight: 850;
-  letter-spacing: -2px;
-  margin: 0;
-  text-transform: uppercase;
-  line-height: 1.1;
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-}
-.overall-signal-text.buy    { color: var(--buy); }
-.overall-signal-text.sell   { color: var(--sell); }
-.overall-signal-text.neutral { color: var(--neutral); }
-
-.overall-judgment {
-  font-size: 0.92rem;
-  font-weight: 400;
-  color: var(--muted);
-  margin: 10px 0 0;
-  line-height: 1.7;
-}
-
-.confidence-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 6px;
-}
-.confidence-value {
-  font-size: 2.6rem;
-  font-weight: 800;
-  margin-bottom: 12px;
-  color: var(--text);
-  font-family: 'IBM Plex Mono', ui-monospace, monospace;
-  letter-spacing: -2px;
-  line-height: 1;
-}
-.confidence-bar-track {
-  width: 100%;
-  height: 6px;
-  background: var(--border);
-  border-radius: 4px;
-  overflow: visible;
-  position: relative;
-}
-.confidence-bar-track::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 4px;
-  background: repeating-linear-gradient(
-    to right,
-    transparent 0%,
-    transparent calc(10% - 1px),
-    rgba(15,17,23,0.65) calc(10% - 1px),
-    rgba(15,17,23,0.65) 10%
-  );
-  pointer-events: none;
-  z-index: 2;
-}
-.confidence-bar-fill {
-  height: 100%;
-  background: var(--buy);
-  width: 0%;
-  transition: width 1s cubic-bezier(0.165, 0.84, 0.44, 1);
-  position: relative;
-  z-index: 1;
-  border-radius: 4px;
-}
-
-@media (max-width: 600px) {
-  .overall-content { flex-direction: column; gap: 24px; text-align: center; }
-  .overall-main { text-align: center; }
-  .overall-side { border-left: none; padding-left: 0; text-align: center; }
-  .overall-signal-text { font-size: 2.8rem; }
-}
 
 /* ── Cache Indicator ── */
 #cache-indicator {
