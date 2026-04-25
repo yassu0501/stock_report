@@ -1434,6 +1434,7 @@ async function buildReport(code) {
 // ─── Endpoints ───
 
 app.get('/', (req, res) => res.sendFile(path.join(BASE_DIR, 'index.html')));
+app.get('/logic', (req, res) => res.sendFile(path.join(BASE_DIR, 'logic.html')));
 app.get('/app.js', (req, res) => res.sendFile(path.join(BASE_DIR, 'app.js')));
 app.get('/styles.css', (req, res) => res.sendFile(path.join(BASE_DIR, 'styles.css')));
 

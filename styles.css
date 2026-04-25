@@ -51,6 +51,17 @@ header {
   opacity: 0.85;
   font-weight: 500;
 }
+.notice-logic-link {
+  color: #8b8fa8;
+  text-decoration: none;
+  font-size: 12px;
+  opacity: 0.85;
+  transition: color .2s, opacity .2s;
+}
+.notice-logic-link:hover {
+  color: #e8eaf0;
+  opacity: 1;
+}
 
 /* ── Footer ── */
 .site-footer {

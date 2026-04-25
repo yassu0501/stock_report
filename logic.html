@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>レポート生成ロジック | 株レポート</title>
+  <style>
+    :root {
+      --buy:     #639922;
+      --sell:    #993C1D;
+      --neutral: #999999;
+      --bg:      #0f1117;
+      --surface: #1a1d27;
+      --border:  #2a2d3a;
+      --text:    #e8eaf0;
+      --muted:   #8b8fa8;
+      --accent:  #e6a817;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: color .2s;
+    }
+    .header a:hover { color: var(--text); }
+    .header h1 { font-size: 18px; font-weight: 700; }
+    .header-badge {
+      background: #2a2d3a;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    /* ── Navigation ── */
+    .nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+    }
+    .nav a {
+      color: var(--muted);
+      text-decoration: none;
+      padding: 12px 16px;
+      font-size: 13px;
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: color .2s, border-color .2s;
+    }
+    .nav a:hover { color: var(--text); }
+    .nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Layout ── */
+    .container { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+
+    /* ── Section ── */
+    .section { margin-bottom: 48px; }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-icon {
+      width: 36px; height: 36px;
+      background: #252836;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    .section-title { font-size: 20px; font-weight: 700; }
+    .section-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Signal flow ── */
+    .flow-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .flow-item {
+      background: #252836;
+      border-radius: 8px;
+      padding: 14px;
+      position: relative;
+    }
+    .flow-item .indicator-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .flow-item .condition { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .flow-item .condition span.buy  { color: #7db344; font-weight: 600; }
+    .flow-item .condition span.sell { color: #c0614a; font-weight: 600; }
+    .flow-item .pts {
+      font-size: 11px;
+      background: #1a1d27;
+      border-radius: 4px;
+      padding: 2px 6px;
+      display: inline-block;
+      margin-top: 4px;
+    }
+
+    /* ── Score weights ── */
+    .horizon-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 600px) {
+      .horizon-grid { grid-template-columns: 1fr; }
+      .flow-grid { grid-template-columns: 1fr; }
+    }
+    .horizon-card {
+      background: #252836;
+      border-radius: 10px;
+      padding: 18px;
+      text-align: center;
+    }
+    .horizon-label {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .weight-bar-wrap { margin-bottom: 8px; }
+    .weight-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .weight-bar {
+      height: 8px;
+      border-radius: 4px;
+      background: #1a1d27;
+      overflow: hidden;
+    }
+    .weight-bar-fill-tech { background: #4a7fc1; }
+    .weight-bar-fill-fund { background: var(--accent); }
+    .horizon-indicators {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 10px;
+      text-align: left;
+    }
+    .horizon-indicators li { margin-bottom: 2px; list-style: none; padding-left: 12px; position: relative; }
+    .horizon-indicators li::before { content: '•'; position: absolute; left: 0; color: var(--muted); }
+
+    /* ── Signal threshold ── */
+    .threshold-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .threshold-row:last-child { border-bottom: none; }
+    .signal-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 4px;
+      min-width: 90px;
+      text-align: center;
+    }
+    .sig-strong-buy  { background: #1d3a0a; color: #7db344; }
+    .sig-buy         { background: #223312; color: #94c45a; }
+    .sig-neutral     { background: #252836; color: var(--muted); }
+    .sig-sell        { background: #3a1a0a; color: #c0614a; }
+    .sig-strong-sell { background: #2a0a0a; color: #cc3311; }
+    .threshold-range { color: var(--muted); font-size: 12px; min-width: 80px; }
+
+    /* ── Formula ── */
+    .formula-box {
+      background: #0d1017;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 2;
+      margin: 12px 0;
+      overflow-x: auto;
+    }
+    .formula-box .comment { color: #5a6478; }
+    .formula-box .fn { color: #7da7d9; }
+    .formula-box .num { color: #b5d49a; }
+    .formula-box .kw { color: var(--accent); }
+
+    /* ── Price step table ── */
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      background: #252836;
+      color: var(--muted);
+      font-weight: 600;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    tr:last-child td { border-bottom: none; }
+
+    /* ── Data source ── */
+    .source-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .source-row:last-child { border-bottom: none; }
+    .source-logo {
+      background: #252836;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      min-width: 100px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .source-info { flex: 1; }
+    .source-name { font-weight: 700; margin-bottom: 4px; }
+    .source-desc { font-size: 12px; color: var(--muted); }
+    .source-fields {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .field-tag {
+      background: #1a1d27;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ── Cache / update info ── */
+    .update-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .update-item {
+      background: #252836;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .update-item .ui-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .update-item .ui-value { font-size: 15px; font-weight: 700; color: var(--accent); }
+    .update-item .ui-desc { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* ── Scroll anchor offset ── */
+    .anchor { scroll-margin-top: 110px; }
+
+    /* ── Misc ── */
+    .label-pill {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #252836;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+    .note {
+      background: #1a1d10;
+      border-left: 3px solid var(--buy);
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--muted);
+      border-radius: 0 6px 6px 0;
+      margin-top: 12px;
+    }
+    .warn {
+      background: #1d160a;
+      border-left: 3px solid var(--accent);
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--muted);
+      border-radius: 0 6px 6px 0;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <a href="/">← レポートに戻る</a>
+  <h1>レポート生成ロジック</h1>
+  <span class="header-badge">ブラックボックス公開</span>
+</div>
+
+<nav class="nav">
+  <a href="#signal" class="active">シグナル判定</a>
+  <a href="#scoring">スコアリング</a>
+  <a href="#target">目標株価</a>
+  <a href="#datasource">データソース</a>
+</nav>
+
+<div class="container">
+
+  <!-- ═══════════════════════════════════════════
+       1. シグナル判定ロジック
+       ══════════════════════════════════════════ -->
+  <section class="section anchor" id="signal">
+    <div class="section-header">
+      <div class="section-icon">📡</div>
+      <div>
+        <div class="section-title">シグナル判定ロジック</div>
+        <div class="section-sub">テクニカル指標ごとの買い／売り条件と加点方式</div>
+      </div>
+    </div>
+
+    <!-- テクニカルシグナル -->
+    <div class="card">
+      <div class="card-title">🔧 テクニカルシグナル（加点方式）</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">
+        各指標を評価して points を加算・減算し、正規化してスコア（0〜100）に変換します。
+      </p>
+
+      <div class="flow-grid">
+
+        <div class="flow-item">
+          <div class="indicator-name">SMA20 / SMA50</div>
+          <div class="condition">現値 &gt; SMA20 &gt; SMA50 → <span class="buy">+2</span></div>
+          <div class="condition">現値 &lt; SMA20 &lt; SMA50 → <span class="sell">−2</span></div>
+          <div class="pts">最大 ±2pt</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">RSI (14日)</div>
+          <div class="condition">RSI &lt; 30（売られすぎ） → <span class="buy">+2</span></div>
+          <div class="condition">RSI &lt; 45（やや弱め） → <span class="buy">+1</span></div>
+          <div class="condition">RSI &gt; 70（買われすぎ） → <span class="sell">−2</span></div>
+          <div class="pts">最大 ±2pt</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">MACD ヒストグラム</div>
+          <div class="condition">relH &gt; 0.001 → <span class="buy">+2</span></div>
+          <div class="condition">relH &gt; 0 → <span class="buy">+1</span></div>
+          <div class="condition">relH &gt; −0.001 → <span class="sell">−1</span></div>
+          <div class="condition">relH ≤ −0.001 → <span class="sell">−2</span></div>
+          <div class="pts">relH = histogram ÷ 現在株価</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">ボリンジャーバンド</div>
+          <div class="condition">oversold シグナル → <span class="buy">+2</span></div>
+          <div class="condition">overbought シグナル → <span class="sell">−2</span></div>
+          <div class="pts">最大 ±2pt</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">一目均衡表</div>
+          <div class="condition">雲の上（bullish） → <span class="buy">+2</span></div>
+          <div class="condition">雲の下（bearish） → <span class="sell">−2</span></div>
+          <div class="pts">最大 ±2pt</div>
+        </div>
+
+      </div>
+
+      <div class="formula-box" style="margin-top:16px;">
+<span class="comment">// スコア正規化</span>
+score = ( points + activeMax ) / ( activeMax × <span class="num">2</span> ) × <span class="num">100</span>
+<span class="comment">// 指標が少ない場合は中立寄りに補正（35〜65の範囲）</span>
+<span class="kw">if</span> (activeMax ≤ <span class="num">2</span>) score = clamp(score, <span class="num">35</span>, <span class="num">65</span>)
+      </div>
+    </div>
+
+    <!-- ファンダメンタルシグナル -->
+    <div class="card">
+      <div class="card-title">📊 ファンダメンタルシグナル（加点方式）</div>
+      <div class="flow-grid">
+
+        <div class="flow-item">
+          <div class="indicator-name">PER</div>
+          <div class="condition">PER &lt; 15 → <span class="buy">+2</span></div>
+          <div class="condition">PER &lt; 25 → <span class="buy">+1</span></div>
+          <div class="condition">PER &gt; 35 → <span class="sell">−1</span></div>
+          <div class="pts">最大 +2 / 最小 −1</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">配当利回り</div>
+          <div class="condition">1.5% 以上 → <span class="buy">+1</span></div>
+          <div class="pts">最大 +1</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">年初来パフォーマンス</div>
+          <div class="condition">&gt; +5% → <span class="buy">+2</span></div>
+          <div class="condition">&gt; 0% → <span class="buy">+1</span></div>
+          <div class="condition">≥ −5% → <span class="sell">−1</span></div>
+          <div class="condition">&lt; −5% → <span class="sell">−2</span></div>
+          <div class="pts">最大 ±2pt</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">信用倍率</div>
+          <div class="condition">normal → <span class="buy">+1</span></div>
+          <div class="condition">high / low → <span class="sell">−1</span></div>
+          <div class="pts">最大 ±1pt</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">EPS 成長率</div>
+          <div class="condition">high_growth → <span class="buy">+2</span></div>
+          <div class="condition">steady_growth → <span class="buy">+1</span></div>
+          <div class="condition">negative → <span class="sell">−1</span></div>
+          <div class="pts">最大 ±2pt</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">経常利益率</div>
+          <div class="condition">excellent → <span class="buy">+2</span></div>
+          <div class="condition">good → <span class="buy">+1</span></div>
+          <div class="condition">poor → <span class="sell">−1</span></div>
+          <div class="pts">最大 +2 / 最小 −1</div>
+        </div>
+
+        <div class="flow-item">
+          <div class="indicator-name">PBR</div>
+          <div class="condition">PBR &lt; 1.0 → <span class="buy">+2</span></div>
+          <div class="condition">PBR &lt; 1.5 → <span class="buy">+1</span></div>
+          <div class="condition">PBR &gt; 3.0 → <span class="sell">−1</span></div>
+          <div class="pts">最大 +2 / 最小 −1</div>
+        </div>
+
+      </div>
+
+      <div class="formula-box" style="margin-top:16px;">
+<span class="comment">// 正規化（最大 +12 / 最小 −7 → 0〜100）</span>
+score = ( points + <span class="num">7</span> ) / <span class="num">19</span> × <span class="num">100</span>
+      </div>
+    </div>
+
+    <!-- シグナル閾値 -->
+    <div class="card">
+      <div class="card-title">🎯 最終シグナル変換（スコア閾値）</div>
+      <div class="threshold-row">
+        <span class="signal-badge sig-strong-buy">強い買い</span>
+        <span class="threshold-range">スコア ≥ 75</span>
+        <span style="font-size:13px;color:var(--muted);">複数指標が強い買いサイン。高い確度で上昇トレンド。</span>
+      </div>
+      <div class="threshold-row">
+        <span class="signal-badge sig-buy">買い</span>
+        <span class="threshold-range">60 ≤ スコア &lt; 75</span>
+        <span style="font-size:13px;color:var(--muted);">指標の過半数が買い方向。上昇局面の可能性が高い。</span>
+      </div>
+      <div class="threshold-row">
+        <span class="signal-badge sig-neutral">中立</span>
+        <span class="threshold-range">40 ≤ スコア &lt; 60</span>
+        <span style="font-size:13px;color:var(--muted);">指標が混在。明確なトレンドなし。様子見推奨。</span>
+      </div>
+      <div class="threshold-row">
+        <span class="signal-badge sig-sell">売り</span>
+        <span class="threshold-range">25 ≤ スコア &lt; 40</span>
+        <span style="font-size:13px;color:var(--muted);">指標の過半数が売り方向。下落リスクあり。</span>
+      </div>
+      <div class="threshold-row">
+        <span class="signal-badge sig-strong-sell">強い売り</span>
+        <span class="threshold-range">スコア &lt; 25</span>
+        <span style="font-size:13px;color:var(--muted);">複数指標が強い売りサイン。下落トレンドの可能性大。</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       2. スコアリング基準
+       ══════════════════════════════════════════ -->
+  <section class="section anchor" id="scoring">
+    <div class="section-header">
+      <div class="section-icon">⚖️</div>
+      <div>
+        <div class="section-title">スコアリング基準</div>
+        <div class="section-sub">短期・中期・長期の3軸スコア計算と指標の重み配分</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📐 3軸スコアの重み配分</div>
+      <div class="horizon-grid">
+
+        <div class="horizon-card">
+          <div class="horizon-label">短期（数日〜1週間）</div>
+          <div class="weight-bar-wrap">
+            <div class="weight-bar-label"><span>テクニカル</span><span>90%</span></div>
+            <div class="weight-bar"><div class="weight-bar-fill-tech" style="width:90%;height:100%;"></div></div>
+          </div>
+          <div class="weight-bar-wrap">
+            <div class="weight-bar-label"><span>ファンダメンタル</span><span>10%</span></div>
+            <div class="weight-bar"><div class="weight-bar-fill-fund" style="width:10%;height:100%;"></div></div>
+          </div>
+          <ul class="horizon-indicators" style="margin-top:10px;">
+            <li>RSI（最大 ±3pt）</li>
+            <li>MACD ヒストグラム（最大 ±3pt）</li>
+            <li>ボリンジャーバンド（最大 ±2pt）</li>
+            <li style="color:#5a6478;text-decoration:line-through;">SMA（不使用）</li>
+            <li style="color:#5a6478;text-decoration:line-through;">一目均衡表（不使用）</li>
+          </ul>
+        </div>
+
+        <div class="horizon-card">
+          <div class="horizon-label">中期（数週間〜1ヶ月）</div>
+          <div class="weight-bar-wrap">
+            <div class="weight-bar-label"><span>テクニカル</span><span>60%</span></div>
+            <div class="weight-bar"><div class="weight-bar-fill-tech" style="width:60%;height:100%;"></div></div>
+          </div>
+          <div class="weight-bar-wrap">
+            <div class="weight-bar-label"><span>ファンダメンタル</span><span>40%</span></div>
+            <div class="weight-bar"><div class="weight-bar-fill-fund" style="width:40%;height:100%;"></div></div>
+          </div>
+          <ul class="horizon-indicators" style="margin-top:10px;">
+            <li>テクニカル総合スコア</li>
+            <li>ゴールデンクロス → +5pt</li>
+            <li>デッドクロス → −5pt</li>
+            <li>上昇トレンド形成 → +3pt</li>
+            <li>下降トレンド形成 → −3pt</li>
+          </ul>
+        </div>
+
+        <div class="horizon-card">
+          <div class="horizon-label">長期（数ヶ月〜1年）</div>
+          <div class="weight-bar-wrap">
+            <div class="weight-bar-label"><span>テクニカル</span><span>30%</span></div>
+            <div class="weight-bar"><div class="weight-bar-fill-tech" style="width:30%;height:100%;"></div></div>
+          </div>
+          <div class="weight-bar-wrap">
+            <div class="weight-bar-label"><span>ファンダメンタル</span><span>70%</span></div>
+            <div class="weight-bar"><div class="weight-bar-fill-fund" style="width:70%;height:100%;"></div></div>
+          </div>
+          <ul class="horizon-indicators" style="margin-top:10px;">
+            <li>一目雲（最大 ±4pt）</li>
+            <li>ADX（最大 ±3pt）</li>
+            <li>SMA20/50 配置（最大 ±2pt）</li>
+            <li style="color:#5a6478;text-decoration:line-through;">RSI（不使用）</li>
+            <li style="color:#5a6478;text-decoration:line-through;">MACD（不使用）</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 長期ファンダ個別重み -->
+    <div class="card">
+      <div class="card-title">📋 長期スコア：ファンダメンタル個別重み</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">長期では通常のファンダスコアではなく、指標別に再重み付けして算出します。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>指標</th>
+              <th>最大加点</th>
+              <th>条件（買い）</th>
+              <th>条件（売り）</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>PER</td><td>3pt</td>
+              <td>PER &lt; 15 → +3 / PER &lt; 20 → +1.5</td>
+              <td>PER &gt; 30 → −2 / PER &gt; 25 → −1</td>
+            </tr>
+            <tr>
+              <td>配当利回り</td><td>2pt</td>
+              <td>&gt; 3% → +2 / &gt; 2% → +1</td>
+              <td>0% → −1</td>
+            </tr>
+            <tr>
+              <td>EPS 成長率</td><td>3pt</td>
+              <td>&gt; 10% → +3 / &gt; 0% → +1.5</td>
+              <td>&lt; −10% → −3 / それ以下 → −1.5</td>
+            </tr>
+            <tr>
+              <td>経常利益率</td><td>2pt</td>
+              <td>&gt; 15% → +2 / &gt; 8% → +1</td>
+              <td>&lt; 3% → −2 / &lt; 5% → −1</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 出来高補正 -->
+    <div class="card">
+      <div class="card-title">📈 出来高急増による補正</div>
+      <p style="font-size:13px;color:var(--muted);">
+        出来高が20日平均の2倍以上のとき、シグナル方向にスコアを補正します。
+      </p>
+      <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap;">
+        <div style="background:#252836;border-radius:8px;padding:14px;flex:1;min-width:140px;">
+          <div style="font-size:12px;color:var(--muted);">短期スコア補正</div>
+          <div style="font-size:18px;font-weight:700;margin:4px 0;">±4pt</div>
+          <div style="font-size:11px;color:var(--muted);">買いシグナル時 +4 / 売りシグナル時 −4</div>
+        </div>
+        <div style="background:#252836;border-radius:8px;padding:14px;flex:1;min-width:140px;">
+          <div style="font-size:12px;color:var(--muted);">中期スコア補正</div>
+          <div style="font-size:18px;font-weight:700;margin:4px 0;">±3pt</div>
+          <div style="font-size:11px;color:var(--muted);">買いシグナル時 +3 / 売りシグナル時 −3</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       3. 目標株価の計算式
+       ══════════════════════════════════════════ -->
+  <section class="section anchor" id="target">
+    <div class="section-header">
+      <div class="section-icon">🎯</div>
+      <div>
+        <div class="section-title">目標株価の計算式</div>
+        <div class="section-sub">ATR・52週高安値・SMAを組み合わせたリスク・リワード計算</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📐 目標株価（リワード）の算出</div>
+
+      <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">
+        買いシグナル時：ATR倍率ターゲット と 52週高値×係数 のうち<strong>高い方</strong>を採用。<br>
+        売りシグナル時：ATR倍率ターゲット と 52週安値 のうち<strong>低い方</strong>を採用。
+      </p>
+
+      <div class="formula-box">
+<span class="comment">// 買いシグナル時</span>
+atrTarget  = 現在株価 + ATR × <span class="kw">targetMult</span>
+high52wTgt = 52週高値 × <span class="kw">high52wMult</span>
+目標株価 = <span class="fn">max</span>(atrTarget, high52wTgt)
+
+<span class="comment">// 売りシグナル時</span>
+atrTarget  = 現在株価 − ATR × <span class="kw">targetMult</span>
+目標株価 = <span class="fn">min</span>(atrTarget, 52週安値)
+      </div>
+
+      <div class="note">ATR（Average True Range）= 直近14日の真の値動き幅の平均。相場のボラティリティを表します。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🛡 損切りライン（ストップロス）の算出</div>
+
+      <div class="formula-box">
+<span class="comment">// 買いシグナル時（下方ストップ）</span>
+rawStop = <span class="fn">max</span>( SMA − ATR × stopMult,  52週安値 )
+<span class="kw">if</span> rawStop ≥ 現在株価: rawStop = 現在株価 − ATR × stopMult
+
+<span class="comment">// 売りシグナル時（上方ストップ）</span>
+rawStop = <span class="fn">min</span>( SMA + ATR × stopMult,  52週高値 )
+<span class="kw">if</span> rawStop ≤ 現在株価: rawStop = 現在株価 + ATR × stopMult
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⏱ ホライズン別パラメータ</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ホライズン</th>
+              <th>targetMult<br><span style="font-size:10px;font-weight:400;">(ATR倍率・目標)</span></th>
+              <th>stopMult<br><span style="font-size:10px;font-weight:400;">(ATR倍率・損切)</span></th>
+              <th>ストップ基準SMA</th>
+              <th>52週高安値</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>短期</strong></td>
+              <td>× 1</td>
+              <td>× 0.5</td>
+              <td>SMA20</td>
+              <td>使用しない</td>
+            </tr>
+            <tr>
+              <td><strong>中期</strong></td>
+              <td>× 2</td>
+              <td>× 1</td>
+              <td>SMA20</td>
+              <td>使用する（×1.02）</td>
+            </tr>
+            <tr>
+              <td><strong>長期</strong></td>
+              <td>× 3</td>
+              <td>× 1.5</td>
+              <td>SMA50</td>
+              <td>使用する（×1.05）</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📏 株価帯別 最小値幅（呼値）</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">目標株価・損切りラインはこの単位に丸めます。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>株価帯</th><th>最小値幅（呼値）</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>〜 499円</td><td>10円</td></tr>
+            <tr><td>500 〜 1,999円</td><td>50円</td></tr>
+            <tr><td>2,000 〜 9,999円</td><td>100円</td></tr>
+            <tr><td>10,000円〜</td><td>500円</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⚡ リスク・リワード比率</div>
+      <div class="formula-box">
+R/R比率 = | リワード% | ÷ | リスク% |
+<span class="comment">// 例: 目標 +6%, 損切 −3% → R/R = 2.0</span>
+      </div>
+      <div class="warn">投資判断の参考値です。将来の株価を保証するものではありません。</div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════
+       4. データソースと更新頻度
+       ══════════════════════════════════════════ -->
+  <section class="section anchor" id="datasource">
+    <div class="section-header">
+      <div class="section-icon">🗄️</div>
+      <div>
+        <div class="section-title">データソースと更新頻度</div>
+        <div class="section-sub">利用している外部サービスと取得データの一覧</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🌐 外部データソース一覧</div>
+
+      <div class="source-row">
+        <div class="source-logo">かぶたん</div>
+        <div class="source-info">
+          <div class="source-name">kabutan.jp — 株価履歴（メイン）</div>
+          <div class="source-desc">13ページを並列フェッチし、約310営業日分（≈ 1.5年）の日足データを取得します。</div>
+          <div class="source-fields">
+            <span class="field-tag">日付</span>
+            <span class="field-tag">始値</span>
+            <span class="field-tag">高値</span>
+            <span class="field-tag">安値</span>
+            <span class="field-tag">終値</span>
+            <span class="field-tag">出来高</span>
+            <span class="field-tag">PBR</span>
+            <span class="field-tag">信用倍率</span>
+            <span class="field-tag">EPS成長率</span>
+            <span class="field-tag">経常利益率</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="source-row">
+        <div class="source-logo">Yahoo Finance</div>
+        <div class="source-info">
+          <div class="source-name">Yahoo Finance API — ファンダメンタル</div>
+          <div class="source-desc">クラム認証を使用してクォートサマリーAPIにアクセスします。</div>
+          <div class="source-fields">
+            <span class="field-tag">PER</span>
+            <span class="field-tag">配当利回り</span>
+            <span class="field-tag">Beta</span>
+            <span class="field-tag">時価総額</span>
+            <span class="field-tag">売上高</span>
+            <span class="field-tag">EPS</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="source-row">
+        <div class="source-logo">内部計算</div>
+        <div class="source-info">
+          <div class="source-name">価格履歴から内部算出</div>
+          <div class="source-desc">取得した日足データを元にサーバー側でリアルタイムに計算します。</div>
+          <div class="source-fields">
+            <span class="field-tag">SMA20 / SMA50</span>
+            <span class="field-tag">RSI(14)</span>
+            <span class="field-tag">MACD</span>
+            <span class="field-tag">ボリンジャーバンド</span>
+            <span class="field-tag">一目均衡表</span>
+            <span class="field-tag">ADX</span>
+            <span class="field-tag">ATR</span>
+            <span class="field-tag">52週高安値</span>
+            <span class="field-tag">年初来パフォーマンス</span>
+            <span class="field-tag">平均出来高(20日)</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="card">
+      <div class="card-title">🕐 更新頻度・キャッシュ</div>
+      <div class="update-grid">
+        <div class="update-item">
+          <div class="ui-label">サーバーキャッシュ TTL</div>
+          <div class="ui-value">60分</div>
+          <div class="ui-desc">同一銘柄は1時間キャッシュ。最大30銘柄保持（超過時は古い順に削除）</div>
+        </div>
+        <div class="update-item">
+          <div class="ui-label">ブラウザキャッシュ</div>
+          <div class="ui-value">60分</div>
+          <div class="ui-desc">localStorage に保存。「更新」ボタンでキャッシュクリアして再取得</div>
+        </div>
+        <div class="update-item">
+          <div class="ui-label">価格データ取得範囲</div>
+          <div class="ui-value">約310日</div>
+          <div class="ui-desc">約1.5年分の日足データ（かぶたん 13ページ並列フェッチ）</div>
+        </div>
+        <div class="update-item">
+          <div class="ui-label">データ更新タイミング</div>
+          <div class="ui-value">手動</div>
+          <div class="ui-desc">自動更新なし。「更新」ボタンまたはキャッシュ期限切れ後に再取得</div>
+        </div>
+      </div>
+      <div class="warn" style="margin-top:16px;">
+        データソースは非公式スクレイピングを含みます。サービス側の仕様変更により取得できなくなる場合があります。
+      </div>
+    </div>
+
+  </section>
+
+</div>
+
+<script>
+  // ナビゲーションのアクティブ状態をスクロール位置に追従
+  const sections = document.querySelectorAll('.anchor');
+  const navLinks = document.querySelectorAll('.nav a');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navLinks.forEach(a => a.classList.remove('active'));
+        const active = document.querySelector(`.nav a[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -75% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>
