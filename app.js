@@ -707,39 +707,66 @@ function renderReport(data, isFromCache) {
     rrDefs.forEach(({ key, id }) => {
       const rr = rrH[key] || {};
       const isSell = !!rr.is_sell;
+      const entryClass = isSell ? 'sell' : 'buy';
+      const targetClass = isSell ? 'sell' : 'buy';
 
-      // 売りシグナル時はラベルを「下値目処」「上値ストップ」に変更
-      const panel = document.getElementById(`rr-panel-${id}`);
-      if (panel) {
-        const labels = panel.querySelectorAll('.rr-label');
-        if (labels.length >= 2) {
-          labels[0].textContent = isSell ? '下値目処（売り利確）' : '目標株価';
-          labels[1].textContent = isSell ? '損切りライン（上値）' : '損切りライン';
+      // セクションヘッダー
+      const entryHdr = document.getElementById(`rr-${id}-section-entry-header`);
+      if (entryHdr) entryHdr.textContent = isSell ? '空売りエントリー' : 'エントリーポイント';
+      const targetHdr = document.getElementById(`rr-${id}-section-target-header`);
+      if (targetHdr) targetHdr.textContent = isSell ? '利確目標（買い戻し）' : '利確目標';
+
+      // エントリーレベル3段
+      const entryLevels = rr.entry_levels || [];
+      [0, 1, 2].forEach(i => {
+        const lv = entryLevels[i];
+        const priceEl = document.getElementById(`rr-${id}-entry-${i}`);
+        if (priceEl) {
+          priceEl.textContent = lv?.price != null ? `¥${lv.price.toLocaleString()}` : '—';
+          priceEl.className = `rr-value ${entryClass}`;
         }
-      }
+        const pctEl = document.getElementById(`rr-${id}-entry-${i}-pct`);
+        if (pctEl) pctEl.textContent = lv?.pct != null ? `${lv.pct > 0 ? '+' : ''}${lv.pct.toFixed(1)}%` : '';
+        const rrEl = document.getElementById(`rr-${id}-entry-${i}-rr`);
+        if (rrEl) rrEl.textContent = lv?.rr_ratio != null ? `R/R: ${lv.rr_ratio.toFixed(2)}` : '';
+      });
 
-      // 目標価格（売りなら下向き、買いなら上向き）
-      const targetEl = document.getElementById(`rr-${id}-target`);
-      if (targetEl) {
-        targetEl.textContent = rr.reward_target != null ? `¥${rr.reward_target.toLocaleString()}` : 'N/A';
-        targetEl.className = `rr-value ${isSell ? 'sell' : 'buy'}`;
-      }
-      // パーセント表示（符号を値から取る）
-      document.getElementById(`rr-${id}-reward-pct`).textContent =
-        rr.reward_percentage != null ? `${rr.reward_percentage > 0 ? '+' : ''}${rr.reward_percentage.toFixed(1)}%` : '';
+      // 利確レベル3段
+      const targetLevels = rr.target_levels || [];
+      [0, 1, 2].forEach(i => {
+        const lv = targetLevels[i];
+        const priceEl = document.getElementById(`rr-${id}-target-${i}`);
+        if (priceEl) {
+          priceEl.textContent = lv?.price != null ? `¥${lv.price.toLocaleString()}` : '—';
+          priceEl.className = `rr-value ${targetClass}`;
+        }
+        const pctEl = document.getElementById(`rr-${id}-target-${i}-pct`);
+        if (pctEl) pctEl.textContent = lv?.pct != null ? `${lv.pct > 0 ? '+' : ''}${lv.pct.toFixed(1)}%` : '';
+      });
 
-      // 損切りライン（売りなら上、買いなら下）
+      // 損切りライン
       const stopEl = document.getElementById(`rr-${id}-stop`);
       if (stopEl) {
-        stopEl.textContent = rr.stop_loss != null ? `¥${rr.stop_loss.toLocaleString()}` : 'N/A';
+        stopEl.textContent = rr.stop_loss != null ? `¥${rr.stop_loss.toLocaleString()}` : '—';
         stopEl.className = `rr-value ${isSell ? 'buy' : 'sell'}`;
       }
-      document.getElementById(`rr-${id}-risk-pct`).textContent =
-        rr.risk_percentage != null ? `${rr.risk_percentage.toFixed(1)}%` : '';
+      const riskPctEl = document.getElementById(`rr-${id}-risk-pct`);
+      if (riskPctEl) riskPctEl.textContent = rr.risk_percentage != null ? `${rr.risk_percentage.toFixed(1)}%` : '';
 
-      document.getElementById(`rr-${id}-ratio`).textContent =
-        rr.risk_reward_ratio != null ? `${rr.risk_reward_ratio.toFixed(2)}` : 'N/A';
-      document.getElementById(`rr-${id}-evaluation`).textContent = rr.evaluation || '';
+      // R/R比率
+      const ratioEl = document.getElementById(`rr-${id}-ratio`);
+      if (ratioEl) ratioEl.textContent = rr.risk_reward_ratio != null ? rr.risk_reward_ratio.toFixed(2) : '—';
+
+      // 評価テキスト
+      const evalEl = document.getElementById(`rr-${id}-evaluation`);
+      if (evalEl) evalEl.textContent = rr.evaluation || '';
+
+      // エントリー根拠
+      const rationaleEl = document.getElementById(`rr-${id}-entry-rationale`);
+      if (rationaleEl) {
+        rationaleEl.textContent = rr.entry_rationale || '';
+        rationaleEl.style.display = rr.entry_rationale ? '' : 'none';
+      }
     });
 
     // 注目ポイント

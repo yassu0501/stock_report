@@ -1151,6 +1151,138 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
 
     const ratio = riskPct !== 0 ? +Math.abs(rewardPct / riskPct).toFixed(2) : null;
 
+    // ── エントリーポイント計算 ──
+    let entryPoint, entryRationale;
+    const isStrongBuy  = overallSignal === 'strong_buy';
+    const isStrongSell = overallSignal === 'strong_sell';
+
+    if (isStrongBuy) {
+      entryPoint = currentPrice;
+      entryRationale = '強い買いシグナル。現在値でのエントリーを推奨。';
+    } else if (isBuy) {
+      const smaCand = sma20Val !== null && sma20Val < currentPrice ? sma20Val : null;
+      const atrCand = atrVal !== null ? currentPrice - atrVal * 0.5 : null;
+      const buyCands = [smaCand, atrCand].filter(v => v !== null);
+      let rawEntry = buyCands.length > 0 ? Math.max(...buyCands) : currentPrice * 0.97;
+      if ((currentPrice - rawEntry) / currentPrice > 0.05) rawEntry = currentPrice * 0.95;
+      entryPoint = Math.round(rawEntry / step) * step;
+      if (entryPoint >= currentPrice) entryPoint = currentPrice - step;
+      if (entryPoint <= stopLoss) entryPoint = currentPrice;
+      if (entryPoint === currentPrice) {
+        entryRationale = '押し目の余地が限定的。現在値付近でのエントリーを検討。';
+      } else {
+        entryRationale = smaCand !== null && Math.abs(entryPoint - sma20Val) <= step * 2
+          ? `SMA20（¥${Math.round(sma20Val).toLocaleString()}）付近への押し目でのエントリーを推奨。`
+          : `ATRベースの押し目（¥${entryPoint.toLocaleString()}）でのエントリーを推奨。`;
+      }
+    } else if (isStrongSell) {
+      entryPoint = currentPrice;
+      entryRationale = '強い売りシグナル。現在値での空売りエントリーを推奨。';
+    } else if (isSell) {
+      const smaCand = sma20Val !== null && sma20Val > currentPrice ? sma20Val : null;
+      const atrCand = atrVal !== null ? currentPrice + atrVal * 0.5 : null;
+      const sellCands = [smaCand, atrCand].filter(v => v !== null && v > currentPrice && v < stopLoss);
+      let rawEntry = sellCands.length > 0 ? Math.min(...sellCands) : currentPrice;
+      if ((rawEntry - currentPrice) / currentPrice > 0.05) rawEntry = currentPrice * 1.05;
+      entryPoint = Math.round(rawEntry / step) * step;
+      if (entryPoint <= currentPrice) entryPoint = currentPrice;
+      if (entryPoint >= stopLoss) entryPoint = stopLoss - step;
+      entryRationale = smaCand !== null && Math.abs(entryPoint - sma20Val) <= step * 2
+        ? `SMA20（¥${Math.round(sma20Val).toLocaleString()}）付近への戻りで空売りエントリーを推奨。`
+        : `ATRベースの戻り（¥${entryPoint.toLocaleString()}）での空売りエントリーを推奨。`;
+    } else {
+      const rawEntry = atrVal !== null ? currentPrice - atrVal * 0.3 : currentPrice;
+      entryPoint = Math.round(rawEntry / step) * step;
+      if (entryPoint >= currentPrice) entryPoint = currentPrice;
+      if (entryPoint <= stopLoss) entryPoint = stopLoss + step;
+      entryRationale = `中立シグナル。軽い押し目（¥${entryPoint.toLocaleString()}）での慎重なエントリーを検討。`;
+    }
+
+    const entryPct       = +((entryPoint - currentPrice) / currentPrice * 100).toFixed(2);
+    const entryRrRatio   = Math.abs(entryPoint - stopLoss) > 0
+      ? +(Math.abs(rewardTarget - entryPoint) / Math.abs(entryPoint - stopLoss)).toFixed(2)
+      : null;
+
+    // ── 3段階エントリー / 利確レベル ──
+    let entryLevels, targetLevels;
+    {
+      const rnd = (v) => Math.round(v / step) * step;
+      const pct = (v) => +((v - currentPrice) / currentPrice * 100).toFixed(2);
+      const rrOf = (ep) => Math.abs(ep - stopLoss) > 0
+        ? +(Math.abs(rewardTarget - ep) / Math.abs(ep - stopLoss)).toFixed(2) : null;
+
+      if (isSell) {
+        const e0raw = atrVal ? currentPrice + atrVal * 0.3 : currentPrice * 1.03;
+        const sma20a = sma20Val !== null && sma20Val > currentPrice ? sma20Val : null;
+        const e1raw  = sma20a !== null ? Math.min(sma20a, atrVal ? currentPrice + atrVal * 0.7 : currentPrice * 1.07) : (atrVal ? currentPrice + atrVal * 0.7 : currentPrice * 1.07);
+        const sma50a = sma50Val !== null && sma50Val > currentPrice ? sma50Val : null;
+        const e2raw  = sma50a !== null ? Math.min(sma50a, atrVal ? currentPrice + atrVal * 1.2 : currentPrice * 1.12) : (atrVal ? currentPrice + atrVal * 1.2 : currentPrice * 1.12);
+
+        let p0 = Math.max(rnd(Math.min(e0raw, currentPrice * 1.03)), currentPrice);
+        let p1 = Math.max(rnd(Math.min(e1raw, currentPrice * 1.07)), p0);
+        let p2 = Math.max(rnd(Math.min(e2raw, currentPrice * 1.12)), p1);
+        if (p0 >= stopLoss) p0 = stopLoss - step;
+        if (p1 >= stopLoss) p1 = stopLoss - step;
+        if (p2 >= stopLoss) p2 = stopLoss - step;
+
+        entryLevels = [
+          { label: '積極', price: p0, pct: pct(p0), rr_ratio: rrOf(p0) },
+          { label: '標準', price: p1, pct: pct(p1), rr_ratio: rrOf(p1), highlight: true },
+          { label: '保守', price: p2, pct: pct(p2), rr_ratio: rrOf(p2) },
+        ];
+
+        let t0 = rnd(atrVal ? currentPrice - atrVal * targetMult * 0.5 : currentPrice * 0.95);
+        if (t0 >= currentPrice) t0 = currentPrice - step;
+        const t2raw = Math.min(
+          useLow52w && lowPrice52w ? lowPrice52w * 0.95 : currentPrice * 0.80,
+          atrVal ? currentPrice - atrVal * targetMult * 1.8 : currentPrice * 0.80
+        );
+        let t2 = rnd(t2raw);
+        if (t2 >= rewardTarget) t2 = rewardTarget - step;
+
+        targetLevels = [
+          { label: '第1目標', price: t0, pct: pct(t0) },
+          { label: '第2目標', price: rewardTarget, pct: rewardPct, highlight: true },
+          { label: '第3目標', price: t2, pct: pct(t2) },
+        ];
+      } else {
+        const e0raw = atrVal ? currentPrice - atrVal * 0.3 : currentPrice * 0.97;
+        const sma20b = sma20Val !== null && sma20Val < currentPrice ? sma20Val : null;
+        const e1raw  = sma20b !== null ? Math.max(sma20b, atrVal ? currentPrice - atrVal * 0.7 : currentPrice * 0.93) : (atrVal ? currentPrice - atrVal * 0.7 : currentPrice * 0.93);
+        const sma50b = sma50Val !== null && sma50Val < currentPrice ? sma50Val : null;
+        const e2raw  = sma50b !== null ? Math.max(sma50b, atrVal ? currentPrice - atrVal * 1.2 : currentPrice * 0.88) : (atrVal ? currentPrice - atrVal * 1.2 : currentPrice * 0.88);
+
+        let p0 = Math.min(rnd(Math.max(e0raw, currentPrice * 0.97)), currentPrice);
+        let p1 = Math.min(rnd(Math.max(e1raw, currentPrice * 0.93)), p0);
+        let p2 = Math.min(rnd(Math.max(e2raw, currentPrice * 0.88)), p1);
+        if (p0 <= stopLoss) p0 = stopLoss + step;
+        if (p1 <= stopLoss) p1 = stopLoss + step;
+        if (p2 <= stopLoss) p2 = stopLoss + step;
+
+        entryLevels = [
+          { label: '積極', price: p0, pct: pct(p0), rr_ratio: rrOf(p0) },
+          { label: '標準', price: p1, pct: pct(p1), rr_ratio: rrOf(p1), highlight: true },
+          { label: '保守', price: p2, pct: pct(p2), rr_ratio: rrOf(p2) },
+        ];
+
+        let t0 = rnd(atrVal ? currentPrice + atrVal * targetMult * 0.5 : currentPrice * 1.05);
+        if (t0 <= currentPrice) t0 = currentPrice + step;
+        if (t0 >= rewardTarget) t0 = rewardTarget - step;
+        const t2raw = Math.max(
+          useHigh52w ? highPrice * high52wMult : currentPrice * 1.20,
+          atrVal ? currentPrice + atrVal * targetMult * 1.8 : currentPrice * 1.20
+        );
+        let t2 = rnd(t2raw);
+        if (t2 <= rewardTarget) t2 = rewardTarget + step;
+
+        targetLevels = [
+          { label: '第1目標', price: t0, pct: pct(t0) },
+          { label: '第2目標', price: rewardTarget, pct: rewardPct, highlight: true },
+          { label: '第3目標', price: t2, pct: pct(t2) },
+        ];
+      }
+    }
+
     let evaluation;
     if (ratio === null) {
       evaluation = 'リスク・リワード比率を計算できません';
@@ -1180,10 +1312,24 @@ function calculateRiskReward(currentPrice, highPrice, lowPrice52w, atrVal, sma50
       }
     }
 
-    return { reward_target: rewardTarget, reward_percentage: rewardPct, stop_loss: stopLoss, risk_percentage: riskPct, risk_reward_ratio: ratio, evaluation, is_sell: isSell };
+    return {
+      reward_target: rewardTarget, reward_percentage: rewardPct,
+      stop_loss: stopLoss, risk_percentage: riskPct,
+      risk_reward_ratio: ratio, evaluation, is_sell: isSell,
+      entry_point: entryPoint, entry_percentage: entryPct,
+      entry_rationale: entryRationale, entry_rr_ratio: entryRrRatio,
+      entry_levels: entryLevels, target_levels: targetLevels,
+    };
   } catch (err) {
     console.error('[calculateRiskReward] failed:', err.message);
-    return { reward_target: null, reward_percentage: null, stop_loss: null, risk_percentage: null, risk_reward_ratio: null, evaluation: '計算中にエラーが発生しました' };
+    return {
+      reward_target: null, reward_percentage: null,
+      stop_loss: null, risk_percentage: null,
+      risk_reward_ratio: null, evaluation: '計算中にエラーが発生しました',
+      entry_point: null, entry_percentage: null,
+      entry_rationale: null, entry_rr_ratio: null,
+      entry_levels: null, target_levels: null,
+    };
   }
 }
 

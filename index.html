@@ -392,63 +392,168 @@
       </div>
       <!-- 短期 -->
       <div class="rr-panel" id="rr-panel-short" style="display:none;">
-        <div class="rr-grid">
-          <div class="rr-item">
-            <div class="rr-label">目標株価</div>
-            <div class="rr-value buy" id="rr-short-target"></div>
-            <div class="rr-sub" id="rr-short-reward-pct"></div>
+        <div class="rr-section-header" id="rr-short-section-entry-header">エントリーポイント</div>
+        <div class="rr-levels-grid">
+          <div class="rr-level-item">
+            <div class="rr-level-label">積極</div>
+            <div class="rr-value" id="rr-short-entry-0">—</div>
+            <div class="rr-sub" id="rr-short-entry-0-pct"></div>
+            <div class="rr-sub rr-rr-hint" id="rr-short-entry-0-rr"></div>
           </div>
+          <div class="rr-level-item rr-level-highlight">
+            <div class="rr-level-label">標準</div>
+            <div class="rr-value" id="rr-short-entry-1">—</div>
+            <div class="rr-sub" id="rr-short-entry-1-pct"></div>
+            <div class="rr-sub rr-rr-hint" id="rr-short-entry-1-rr"></div>
+          </div>
+          <div class="rr-level-item">
+            <div class="rr-level-label">保守</div>
+            <div class="rr-value" id="rr-short-entry-2">—</div>
+            <div class="rr-sub" id="rr-short-entry-2-pct"></div>
+            <div class="rr-sub rr-rr-hint" id="rr-short-entry-2-rr"></div>
+          </div>
+        </div>
+        <div class="rr-section-header" id="rr-short-section-target-header">利確目標</div>
+        <div class="rr-levels-grid">
+          <div class="rr-level-item">
+            <div class="rr-level-label">第1目標</div>
+            <div class="rr-value buy" id="rr-short-target-0">—</div>
+            <div class="rr-sub" id="rr-short-target-0-pct"></div>
+          </div>
+          <div class="rr-level-item rr-level-highlight">
+            <div class="rr-level-label">第2目標</div>
+            <div class="rr-value buy" id="rr-short-target-1">—</div>
+            <div class="rr-sub" id="rr-short-target-1-pct"></div>
+          </div>
+          <div class="rr-level-item">
+            <div class="rr-level-label">第3目標</div>
+            <div class="rr-value buy" id="rr-short-target-2">—</div>
+            <div class="rr-sub" id="rr-short-target-2-pct"></div>
+          </div>
+        </div>
+        <div class="rr-grid-bottom">
           <div class="rr-item">
             <div class="rr-label">損切りライン</div>
-            <div class="rr-value sell" id="rr-short-stop"></div>
+            <div class="rr-value sell" id="rr-short-stop">—</div>
             <div class="rr-sub" id="rr-short-risk-pct"></div>
           </div>
           <div class="rr-item">
             <div class="rr-label">R/R 比率</div>
-            <div class="rr-value" id="rr-short-ratio"></div>
+            <div class="rr-value" id="rr-short-ratio">—</div>
           </div>
         </div>
         <div class="rr-evaluation" id="rr-short-evaluation"></div>
+        <div class="rr-entry-rationale" id="rr-short-entry-rationale"></div>
       </div>
       <!-- 中期 -->
       <div class="rr-panel" id="rr-panel-medium">
-        <div class="rr-grid">
-          <div class="rr-item">
-            <div class="rr-label">目標株価</div>
-            <div class="rr-value buy" id="rr-medium-target"></div>
-            <div class="rr-sub" id="rr-medium-reward-pct"></div>
+        <div class="rr-section-header" id="rr-medium-section-entry-header">エントリーポイント</div>
+        <div class="rr-levels-grid">
+          <div class="rr-level-item">
+            <div class="rr-level-label">積極</div>
+            <div class="rr-value" id="rr-medium-entry-0">—</div>
+            <div class="rr-sub" id="rr-medium-entry-0-pct"></div>
+            <div class="rr-sub rr-rr-hint" id="rr-medium-entry-0-rr"></div>
           </div>
+          <div class="rr-level-item rr-level-highlight">
+            <div class="rr-level-label">標準</div>
+            <div class="rr-value" id="rr-medium-entry-1">—</div>
+            <div class="rr-sub" id="rr-medium-entry-1-pct"></div>
+            <div class="rr-sub rr-rr-hint" id="rr-medium-entry-1-rr"></div>
+          </div>
+          <div class="rr-level-item">
+            <div class="rr-level-label">保守</div>
+            <div class="rr-value" id="rr-medium-entry-2">—</div>
+            <div class="rr-sub" id="rr-medium-entry-2-pct"></div>
+            <div class="rr-sub rr-rr-hint" id="rr-medium-entry-2-rr"></div>
+          </div>
+        </div>
+        <div class="rr-section-header" id="rr-medium-section-target-header">利確目標</div>
+        <div class="rr-levels-grid">
+          <div class="rr-level-item">
+            <div class="rr-level-label">第1目標</div>
+            <div class="rr-value buy" id="rr-medium-target-0">—</div>
+            <div class="rr-sub" id="rr-medium-target-0-pct"></div>
+          </div>
+          <div class="rr-level-item rr-level-highlight">
+            <div class="rr-level-label">第2目標</div>
+            <div class="rr-value buy" id="rr-medium-target-1">—</div>
+            <div class="rr-sub" id="rr-medium-target-1-pct"></div>
+          </div>
+          <div class="rr-level-item">
+            <div class="rr-level-label">第3目標</div>
+            <div class="rr-value buy" id="rr-medium-target-2">—</div>
+            <div class="rr-sub" id="rr-medium-target-2-pct"></div>
+          </div>
+        </div>
+        <div class="rr-grid-bottom">
           <div class="rr-item">
             <div class="rr-label">損切りライン</div>
-            <div class="rr-value sell" id="rr-medium-stop"></div>
+            <div class="rr-value sell" id="rr-medium-stop">—</div>
             <div class="rr-sub" id="rr-medium-risk-pct"></div>
           </div>
           <div class="rr-item">
             <div class="rr-label">R/R 比率</div>
-            <div class="rr-value" id="rr-medium-ratio"></div>
+            <div class="rr-value" id="rr-medium-ratio">—</div>
           </div>
         </div>
         <div class="rr-evaluation" id="rr-medium-evaluation"></div>
+        <div class="rr-entry-rationale" id="rr-medium-entry-rationale"></div>
       </div>
       <!-- 長期 -->
       <div class="rr-panel" id="rr-panel-long" style="display:none;">
-        <div class="rr-grid">
-          <div class="rr-item">
-            <div class="rr-label">目標株価</div>
-            <div class="rr-value buy" id="rr-long-target"></div>
-            <div class="rr-sub" id="rr-long-reward-pct"></div>
+        <div class="rr-section-header" id="rr-long-section-entry-header">エントリーポイント</div>
+        <div class="rr-levels-grid">
+          <div class="rr-level-item">
+            <div class="rr-level-label">積極</div>
+            <div class="rr-value" id="rr-long-entry-0">—</div>
+            <div class="rr-sub" id="rr-long-entry-0-pct"></div>
+            <div class="rr-sub rr-rr-hint" id="rr-long-entry-0-rr"></div>
           </div>
+          <div class="rr-level-item rr-level-highlight">
+            <div class="rr-level-label">標準</div>
+            <div class="rr-value" id="rr-long-entry-1">—</div>
+            <div class="rr-sub" id="rr-long-entry-1-pct"></div>
+            <div class="rr-sub rr-rr-hint" id="rr-long-entry-1-rr"></div>
+          </div>
+          <div class="rr-level-item">
+            <div class="rr-level-label">保守</div>
+            <div class="rr-value" id="rr-long-entry-2">—</div>
+            <div class="rr-sub" id="rr-long-entry-2-pct"></div>
+            <div class="rr-sub rr-rr-hint" id="rr-long-entry-2-rr"></div>
+          </div>
+        </div>
+        <div class="rr-section-header" id="rr-long-section-target-header">利確目標</div>
+        <div class="rr-levels-grid">
+          <div class="rr-level-item">
+            <div class="rr-level-label">第1目標</div>
+            <div class="rr-value buy" id="rr-long-target-0">—</div>
+            <div class="rr-sub" id="rr-long-target-0-pct"></div>
+          </div>
+          <div class="rr-level-item rr-level-highlight">
+            <div class="rr-level-label">第2目標</div>
+            <div class="rr-value buy" id="rr-long-target-1">—</div>
+            <div class="rr-sub" id="rr-long-target-1-pct"></div>
+          </div>
+          <div class="rr-level-item">
+            <div class="rr-level-label">第3目標</div>
+            <div class="rr-value buy" id="rr-long-target-2">—</div>
+            <div class="rr-sub" id="rr-long-target-2-pct"></div>
+          </div>
+        </div>
+        <div class="rr-grid-bottom">
           <div class="rr-item">
             <div class="rr-label">損切りライン</div>
-            <div class="rr-value sell" id="rr-long-stop"></div>
+            <div class="rr-value sell" id="rr-long-stop">—</div>
             <div class="rr-sub" id="rr-long-risk-pct"></div>
           </div>
           <div class="rr-item">
             <div class="rr-label">R/R 比率</div>
-            <div class="rr-value" id="rr-long-ratio"></div>
+            <div class="rr-value" id="rr-long-ratio">—</div>
           </div>
         </div>
         <div class="rr-evaluation" id="rr-long-evaluation"></div>
+        <div class="rr-entry-rationale" id="rr-long-entry-rationale"></div>
       </div>
     </div>
 

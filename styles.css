@@ -529,13 +529,52 @@ main {
 .rr-panel { animation: fadeIn 0.15s ease; }
 
 /* ── Risk / Reward ── */
-.rr-grid {
+.rr-section-header {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 14px 0 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+.rr-levels-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 10px;
+  margin-bottom: 4px;
 }
-@media (max-width: 700px) { .rr-grid { grid-template-columns: 1fr; } }
+.rr-level-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface, rgba(255,255,255,0.03));
+  border: 1px solid var(--border);
+}
+.rr-level-item.rr-level-highlight {
+  border-color: var(--accent, #e6a817);
+  background: rgba(230, 168, 23, 0.07);
+}
+.rr-level-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.rr-rr-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.rr-grid-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 14px 0 8px;
+}
+.rr-entry-rationale { font-size: 0.8rem; color: var(--muted); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
 @media (max-width: 600px) {
   .chart-wrap { height: 380px; }
 }
